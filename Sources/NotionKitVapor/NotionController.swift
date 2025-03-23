@@ -132,7 +132,8 @@ public struct NotionController {
             // Exchange code for token directly without creating a mock request
             let token = try await req.application.notion.exchangeCodeForToken(
                 userId: userId, 
-                code: tokenRequest.code
+                code: tokenRequest.code,
+                redirectURI: tokenRequest.redirectUri
             )
             
             req.logger.info("Successfully exchanged code for token")

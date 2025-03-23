@@ -93,25 +93,27 @@ public class NotionVaporClient: @unchecked Sendable {
     /// - Parameters:
     ///   - userId: The ID of the user to associate with the token
     ///   - code: The authorization code from the OAuth flow
+    ///   - redirectURI: Optional redirect URI to use, defaults to the client's redirectUri
     /// - Returns: The token
-    public func exchangeCodeForToken(userId: String, code: String) async throws -> NotionToken {
+    public func exchangeCodeForToken(userId: String?, code: String, redirectURI: String? = nil) async throws -> NotionToken {
         // Log the inputs for debugging
         print("=== NotionKit Debug ===")
         print("Exchanging code for token with:")
-        print("- userId: \(userId)")
+        print("- userId: \(userId ?? "nil")")
         print("- code: \(String(code.prefix(5)))...") // Only show start of code for security
         print("- clientId: \(String(clientId.prefix(5)))...")
-        print("- redirectUri: \(redirectUri)")
+        print("- redirectUri: \(redirectURI ?? redirectUri)")
         
         do {
             // Exchange code for token using the notionClient
             let token = try await notionClient.exchangeCodeForToken(
                 userId: userId,
-                code: code
+                code: code,
+                redirectURI: redirectURI ?? redirectUri
             )
             
             // Save token to storage
-            try await tokenStorage.saveToken(userId: userId, token: token)
+            try await tokenStorage.saveToken(userId: userId ?? "", token: token)
             print("=== Token exchange successful ===")
             print("- workspace: \(token.workspaceName)")
             

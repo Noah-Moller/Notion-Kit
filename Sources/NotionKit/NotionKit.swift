@@ -954,7 +954,7 @@ public protocol NotionClientProtocol {
     func getOAuthURL(redirectURI: String, state: String?, userId: String?) -> URL
     
     /// Exchange a code for an access token
-    func exchangeCodeForToken(userId: String?, code: String) async throws -> NotionToken
+    func exchangeCodeForToken(userId: String?, code: String, redirectURI: String?) async throws -> NotionToken
     
     /// List databases accessible to the token
     func listDatabases(token: String) async throws -> [NotionDatabase]

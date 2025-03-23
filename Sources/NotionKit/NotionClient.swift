@@ -115,8 +115,9 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
     /// - Parameters:
     ///   - userId: Optional user ID to associate with the token
     ///   - code: The authorization code from Notion
+    ///   - redirectURI: The redirect URI used in the authorization request
     /// - Returns: The Notion token
-    public func exchangeCodeForToken(userId: String?, code: String) async throws -> NotionToken {
+    public func exchangeCodeForToken(userId: String?, code: String, redirectURI: String? = nil) async throws -> NotionToken {
         let url = oauthURL.appendingPathComponent("token")
         
         var request = URLRequest(url: url)
@@ -139,10 +140,13 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
             let redirect_uri: String
         }
         
+        // Use the provided redirectURI or fall back to a default
+        let actualRedirectURI = redirectURI ?? "https://example.com/callback"
+        
         let tokenRequest = TokenRequest(
             grant_type: "authorization_code",
             code: code,
-            redirect_uri: "https://example.com/callback" // This should match the redirect URI used for the auth URL
+            redirect_uri: actualRedirectURI
         )
         
         let encoder = JSONEncoder()
@@ -157,6 +161,9 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         }
         
         if httpResponse.statusCode != 200 {
+            // For debugging, print the response body
+            print("Error response body: \(String(data: data, encoding: .utf8) ?? "Unable to decode error response")")
+            
             let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
             throw NotionClientError.httpError(statusCode: httpResponse.statusCode, message: errorResponse?.message ?? "Unknown error")
         }
