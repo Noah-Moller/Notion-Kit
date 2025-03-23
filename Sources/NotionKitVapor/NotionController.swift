@@ -26,12 +26,18 @@ public struct NotionController {
             routeGroup = routes
         }
         
-        // Register routes
+        // Register standard routes
         routeGroup.get("notion", "authorize", use: authorize)
         routeGroup.get("notion", "callback", use: callback)
         routeGroup.post("notion", "token", use: exchangeToken)
         routeGroup.get("notion", "databases", use: listDatabases)
         routeGroup.post("notion", "databases", ":databaseId", "query", use: queryDatabase)
+        
+        // Register client-compatible routes
+        let apiGroup = routeGroup.grouped("api")
+        apiGroup.post("notion", "token", use: exchangeToken)
+        apiGroup.get("notion", "databases", use: listDatabases)
+        apiGroup.post("notion", "databases", ":databaseId", "query", use: queryDatabase)
     }
     
     // MARK: - Handlers
@@ -57,7 +63,7 @@ public struct NotionController {
     public static func callback(req: Request) async throws -> Response {
         // Get user ID from authenticated user or request
         let userId: String
-        if let authenticatedUser = req.auth.get(BasicUser.self) {
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
             userId = authenticatedUser.id
         } else if let userIdParam = req.query[String.self, at: "user_id"] {
             userId = userIdParam
@@ -99,7 +105,7 @@ public struct NotionController {
         
         // Get user ID from authenticated user or request
         let userId: String
-        if let authenticatedUser = req.auth.get(BasicUser.self) {
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
             userId = authenticatedUser.id
         } else if let userIdParam = req.query[String.self, at: "user_id"] {
             userId = userIdParam
@@ -168,7 +174,7 @@ public struct NotionController {
     public static func listDatabases(req: Request) async throws -> Response {
         // Get user ID from authenticated user or request
         let userId: String
-        if let authenticatedUser = req.auth.get(BasicUser.self) {
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
             userId = authenticatedUser.id
         } else if let userIdParam = req.query[String.self, at: "user_id"] {
             userId = userIdParam
@@ -195,7 +201,7 @@ public struct NotionController {
     public static func queryDatabase(req: Request) async throws -> Response {
         // Get user ID from authenticated user or request
         let userId: String
-        if let authenticatedUser = req.auth.get(BasicUser.self) {
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
             userId = authenticatedUser.id
         } else if let userIdParam = req.query[String.self, at: "user_id"] {
             userId = userIdParam
@@ -246,25 +252,5 @@ public struct NotionController {
         )
         
         return try await queryResponse.encodeResponse(for: req)
-    }
-}
-
-// MARK: - Authenticated User Protocol
-
-/// Protocol for an authenticated user
-public protocol AuthenticatedUser {
-    var id: String { get }
-}
-
-// MARK: - Basic User Implementation
-
-/// A basic implementation of AuthenticatedUser
-public struct BasicUser: AuthenticatedUser, Content, Authenticatable {
-    public let id: String
-    public let name: String
-    
-    public init(id: String, name: String) {
-        self.id = id
-        self.name = name
     }
 } 
