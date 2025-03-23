@@ -80,6 +80,25 @@ public class NotionClientManager: ObservableObject {
         // Load token from storage on init
         self.token = tokenStorage.loadToken()
         self.isAuthenticated = self.token != nil && !(self.token?.isExpired ?? true)
+        
+        // Debug: Print configuration
+        print("=== NotionClientManager Configuration ===")
+        print("API Server URL: \(apiServerURL.absoluteString)")
+        print("User ID: \(userId)")
+        print("Token loaded: \(self.token != nil)")
+        print("Is authenticated: \(self.isAuthenticated)")
+    }
+    
+    // MARK: - Public Properties
+    
+    /// Get the server URL (read-only access to the private apiServerURL)
+    public var serverURL: URL {
+        return apiServerURL
+    }
+    
+    /// Get the user ID (read-only access to the private userId)
+    public func getUserId() -> String {
+        return userId
     }
     
     // MARK: - Authentication
@@ -334,6 +353,7 @@ public class NotionClientManager: ObservableObject {
                 components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
                 
                 guard let url = components.url else {
+                    print("Error: Failed to construct pages URL")
                     throw NSError(
                         domain: "com.notionkit.client",
                         code: 400,
@@ -341,42 +361,63 @@ public class NotionClientManager: ObservableObject {
                     )
                 }
                 
+                print("Fetching pages from URL: \(url.absoluteString)")
+                
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
                 
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw NSError(
-                        domain: "com.notionkit.client",
-                        code: 400,
-                        userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
-                    )
-                }
-                
-                guard httpResponse.statusCode == 200 else {
-                    let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                    throw NSError(
-                        domain: "com.notionkit.client",
-                        code: httpResponse.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
-                    )
-                }
-                
-                let decoder = JSONDecoder()
-                
-                struct PagesResponse: Decodable {
-                    let count: Int
-                    let pages: [NotionPage]
-                }
-                
-                let pagesResponse = try decoder.decode(PagesResponse.self, from: data)
-                
-                DispatchQueue.main.async { [weak self] in
-                    self?.pages = pagesResponse.pages
-                    self?.isLoading = false
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        print("Error: Invalid response type")
+                        throw NSError(
+                            domain: "com.notionkit.client",
+                            code: 400,
+                            userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
+                        )
+                    }
+                    
+                    print("Pages response status: \(httpResponse.statusCode)")
+                    
+                    guard httpResponse.statusCode == 200 else {
+                        let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                        print("HTTP Error \(httpResponse.statusCode): \(errorMessage)")
+                        throw NSError(
+                            domain: "com.notionkit.client",
+                            code: httpResponse.statusCode,
+                            userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
+                        )
+                    }
+                    
+                    let decoder = JSONDecoder()
+                    
+                    struct PagesResponse: Decodable {
+                        let count: Int
+                        let pages: [NotionPage]
+                    }
+                    
+                    let pagesResponse = try decoder.decode(PagesResponse.self, from: data)
+                    print("Successfully decoded \(pagesResponse.pages.count) pages")
+                    
+                    DispatchQueue.main.async { [weak self] in
+                        self?.pages = pagesResponse.pages
+                        self?.isLoading = false
+                    }
+                } catch let urlError as URLError {
+                    print("Network error: \(urlError.localizedDescription)")
+                    print("Error code: \(urlError.errorCode)")
+                    
+                    // Add specific diagnosis for connection errors
+                    if urlError.code == .cannotConnectToHost || urlError.code == .networkConnectionLost {
+                        print("Connection error: Make sure the server is running at \(url.host ?? "unknown host"):\(url.port ?? 0)")
+                        print("Check firewall settings and network connectivity.")
+                    }
+                    
+                    throw urlError
                 }
             } catch {
+                print("Error fetching pages: \(error.localizedDescription)")
                 DispatchQueue.main.async { [weak self] in
                     self?.error = error as NSError
                     self?.isLoading = false
@@ -655,6 +696,61 @@ public class NotionClientManager: ObservableObject {
                     self?.isLoading = false
                 }
             }
+        }
+    }
+    
+    /// Fetch databases from the API server
+    /// - Returns: An array of databases
+    public func fetchDatabases() async throws -> [NotionDatabase] {
+        // No need to check if userId is nil since it's not optional
+        
+        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/databases"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [
+            URLQueryItem(name: "user_id", value: userId)
+        ]
+        
+        guard let url = components.url else {
+            print("Error: Failed to create databases URL")
+            throw NotionClientError.invalidURL
+        }
+        
+        print("Fetching databases from: \(url.absoluteString)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Error: Invalid response type")
+                throw NotionClientError.invalidResponse
+            }
+            
+            print("Databases response status: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode != 200 {
+                let errorString = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("Error response: \(errorString)")
+                throw NotionClientError.httpError(statusCode: httpResponse.statusCode, message: errorString)
+            }
+            
+            let decoder = JSONDecoder()
+            return try decoder.decode([NotionDatabase].self, from: data)
+        } catch let urlError as URLError {
+            print("Network error: \(urlError.localizedDescription)")
+            print("Error code: \(urlError.errorCode)")
+            
+            // Add specific diagnosis for connection errors
+            if urlError.code == .cannotConnectToHost || urlError.code == .networkConnectionLost {
+                print("Connection error: Make sure the server is running at \(url.host ?? "unknown host"):\(url.port ?? 0)")
+                print("Check firewall settings and network connectivity.")
+            }
+            
+            throw urlError
+        } catch {
+            print("Decoding error: \(error)")
+            throw error
         }
     }
 }
