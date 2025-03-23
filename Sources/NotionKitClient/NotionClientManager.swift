@@ -17,11 +17,20 @@ public class NotionClientManager: ObservableObject {
     /// The current token
     @Published public private(set) var token: NotionToken?
     
+    /// Workspace information
+    @Published public private(set) var workspace: NotionWorkspace?
+    
     /// The available databases
     @Published public private(set) var databases: [NotionDatabase] = []
     
-    /// The available pages
+    /// The pages retrieved from Notion
     @Published public private(set) var pages: [NotionPage] = []
+    
+    /// The blocks for the current selected page
+    @Published public private(set) var pageBlocks: [NotionBlock] = []
+    
+    /// The current selected page ID
+    @Published public private(set) var selectedPageId: String?
     
     /// Any error that occurred
     @Published public private(set) var error: Error?
@@ -60,13 +69,13 @@ public class NotionClientManager: ObservableObject {
         clientId: String,
         userId: String = "client-user",
         tokenStorage: UserDefaultsNotionTokenStorage = UserDefaultsNotionTokenStorage(),
-        notionClient: NotionClientProtocol = NotionClient()
+        notionClient: NotionClientProtocol? = nil
     ) {
         self.apiServerURL = apiServerURL
         self.clientId = clientId
         self.userId = userId
         self.tokenStorage = tokenStorage
-        self.notionClient = notionClient
+        self.notionClient = notionClient ?? NotionClient(clientId: clientId)
         
         // Load token from storage on init
         self.token = tokenStorage.loadToken()
@@ -91,10 +100,9 @@ public class NotionClientManager: ObservableObject {
         
         // Get the OAuth URL
         let authURL = notionClient.getOAuthURL(
-            clientId: clientId,
-            redirectUri: redirectURI,
+            redirectURI: redirectURI,
             state: state,
-            ownerType: nil
+            userId: userId
         )
         
         // Start the web authentication session
@@ -247,6 +255,8 @@ public class NotionClientManager: ObservableObject {
         isAuthenticated = false
         databases = []
         pages = []
+        pageBlocks = []
+        selectedPageId = nil
     }
     
     // MARK: - API Methods
@@ -304,53 +314,147 @@ public class NotionClientManager: ObservableObject {
         }.resume()
     }
     
-    /// Fetch available pages
+    /// Fetch pages from Notion API
     public func fetchPages() {
         guard isAuthenticated else {
-            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated with Notion"])
+            self.error = NSError(
+                domain: "com.notionkit.client",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Not authenticated with Notion"]
+            )
             return
         }
         
         isLoading = true
         
-        // Build the URL for the pages endpoint
-        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/pages"), resolvingAgainstBaseURL: true)!
-        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
-        
-        guard let pagesURL = components.url else {
-            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create pages URL"])
-            self.isLoading = false
+        Task {
+            do {
+                let pagesUrl = apiServerURL.appendingPathComponent("notion/pages")
+                var components = URLComponents(url: pagesUrl, resolvingAgainstBaseURL: true)!
+                components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+                
+                guard let url = components.url else {
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: 400,
+                        userInfo: [NSLocalizedDescriptionKey: "Failed to construct URL"]
+                    )
+                }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: 400,
+                        userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
+                    )
+                }
+                
+                guard httpResponse.statusCode == 200 else {
+                    let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: httpResponse.statusCode,
+                        userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
+                    )
+                }
+                
+                let decoder = JSONDecoder()
+                
+                struct PagesResponse: Decodable {
+                    let count: Int
+                    let pages: [NotionPage]
+                }
+                
+                let pagesResponse = try decoder.decode(PagesResponse.self, from: data)
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.pages = pagesResponse.pages
+                    self?.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.error = error as NSError
+                    self?.isLoading = false
+                }
+            }
+        }
+    }
+    
+    /// Fetch blocks for a specific page
+    public func fetchPageBlocks(pageId: String) {
+        guard isAuthenticated else {
+            self.error = NSError(
+                domain: "com.notionkit.client",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Not authenticated with Notion"]
+            )
             return
         }
         
-        // Create request
-        var request = URLRequest(url: pagesURL)
-        request.httpMethod = "GET"
+        isLoading = true
+        selectedPageId = pageId
         
-        // Make request
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isLoading = false
+        Task {
+            do {
+                let blocksUrl = apiServerURL.appendingPathComponent("notion/pages/\(pageId)/blocks")
+                var components = URLComponents(url: blocksUrl, resolvingAgainstBaseURL: true)!
+                components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
                 
-                if let error = error {
-                    self.error = error
-                    return
+                guard let url = components.url else {
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: 400,
+                        userInfo: [NSLocalizedDescriptionKey: "Failed to construct URL"]
+                    )
                 }
                 
-                guard let data = data else {
-                    self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No data received"])
-                    return
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: 400,
+                        userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
+                    )
                 }
                 
-                do {
-                    let decoder = JSONDecoder()
-                    let response = try decoder.decode(PagesResponse.self, from: data)
-                    self.pages = response.pages
-                } catch {
-                    self.error = error
+                guard httpResponse.statusCode == 200 else {
+                    let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: httpResponse.statusCode,
+                        userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
+                    )
+                }
+                
+                let decoder = JSONDecoder()
+                
+                struct BlocksResponse: Decodable {
+                    let count: Int
+                    let blocks: [NotionBlock]
+                }
+                
+                let blocksResponse = try decoder.decode(BlocksResponse.self, from: data)
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.pageBlocks = blocksResponse.blocks
+                    self?.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.error = error as NSError
+                    self?.isLoading = false
                 }
             }
-        }.resume()
+        }
     }
     
     /// Query a database
@@ -443,6 +547,116 @@ public class NotionClientManager: ObservableObject {
     public func resetError() {
         self.error = nil
     }
+    
+    /// Gets the OAuth URL for Notion authentication
+    /// - Parameter redirectURI: The redirect URI for the OAuth flow
+    /// - Returns: The OAuth URL
+    public func getAuthURL(redirectURI: String) -> URL {
+        return URL(string: "\(apiServerURL.absoluteString)/notion/auth/url?redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI)&user_id=\(userId)")!
+    }
+    
+    /// Handles the OAuth callback from Notion
+    /// - Parameters:
+    ///   - url: The callback URL
+    ///   - redirectURI: The redirect URI used for the OAuth flow
+    public func handleCallback(url: URL, redirectURI: String) {
+        // Extract the code from the URL
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems,
+              let code = queryItems.first(where: { $0.name == "code" })?.value else {
+            // Handle error - no code found
+            self.error = NSError(
+                domain: "com.notionkit.client",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "No authorization code found in callback URL"]
+            )
+            return
+        }
+        
+        isLoading = true
+        
+        Task {
+            do {
+                // Build the token exchange URL
+                let tokenURL = apiServerURL.appendingPathComponent("notion/token")
+                
+                // Create the request
+                var request = URLRequest(url: tokenURL)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                // Create the request body
+                struct TokenRequest: Codable {
+                    let code: String
+                    let redirectUri: String
+                    let userId: String
+                }
+                
+                let tokenRequest = TokenRequest(
+                    code: code,
+                    redirectUri: redirectURI,
+                    userId: userId
+                )
+                
+                let encoder = JSONEncoder()
+                request.httpBody = try encoder.encode(tokenRequest)
+                
+                // Make the request
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: 400,
+                        userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
+                    )
+                }
+                
+                guard httpResponse.statusCode == 200 else {
+                    let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    throw NSError(
+                        domain: "com.notionkit.client",
+                        code: httpResponse.statusCode,
+                        userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
+                    )
+                }
+                
+                // Decode the response
+                let decoder = JSONDecoder()
+                
+                struct TokenResponse: Decodable {
+                    let success: Bool
+                    let workspace: String
+                }
+                
+                let tokenResponse = try decoder.decode(TokenResponse.self, from: data)
+                
+                // Update state
+                DispatchQueue.main.async { [weak self] in
+                    self?.isAuthenticated = tokenResponse.success
+                    // Create workspace from token if available
+                    if tokenResponse.success, let token = self?.token {
+                        self?.workspace = NotionWorkspace(
+                            id: token.workspaceId,
+                            name: token.workspaceName,
+                            icon: token.workspaceIcon
+                        )
+                    }
+                    self?.isLoading = false
+                    
+                    // Load databases if we're authenticated
+                    if tokenResponse.success {
+                        self?.loadDatabases()
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.error = error as NSError
+                    self?.isLoading = false
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Token Storage
@@ -522,11 +736,6 @@ private struct TokenResponse: Decodable {
 /// Response for databases list
 private struct DatabasesResponse: Decodable {
     let databases: [NotionDatabase]
-}
-
-/// Response for pages list
-private struct PagesResponse: Decodable {
-    let pages: [NotionPage]
 }
 
 // MARK: - View Extensions
@@ -618,4 +827,17 @@ private class MacWebAuthenticationPresentationContextProvider: NSObject, ASWebAu
         return window
     }
 }
-#endif 
+#endif
+
+/// A struct representing a Notion workspace
+public struct NotionWorkspace: Identifiable {
+    public let id: String
+    public let name: String
+    public let icon: String?
+    
+    public init(id: String, name: String, icon: String? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+    }
+} 

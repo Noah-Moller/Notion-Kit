@@ -120,9 +120,12 @@ public struct NotionPagesView: View {
     }
     
     private func pageRow(_ page: NotionPage) -> some View {
-        Button(action: {
-            onPageSelected?(page)
-        }) {
+        NavigationLink(
+            destination: NotionPageBlocksView(
+                clientManager: clientManager,
+                page: page
+            )
+        ) {
             HStack {
                 VStack(alignment: .leading) {
                     // Since pages might not have a title property directly accessible,
@@ -137,13 +140,13 @@ public struct NotionPagesView: View {
                 }
                 
                 Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
             }
             .padding(.vertical, 8)
         }
         .buttonStyle(PlainButtonStyle())
+        .onTapGesture {
+            onPageSelected?(page)
+        }
     }
     
     private var emptyPagesView: some View {

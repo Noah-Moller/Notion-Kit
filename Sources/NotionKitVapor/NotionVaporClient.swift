@@ -39,13 +39,13 @@ public class NotionVaporClient: @unchecked Sendable {
         clientSecret: String,
         redirectUri: String,
         tokenStorage: NotionTokenStorage,
-        notionClient: NotionClientProtocol = NotionClient()
+        notionClient: NotionClientProtocol? = nil
     ) {
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.redirectUri = redirectUri
         self.tokenStorage = tokenStorage
-        self.notionClient = notionClient
+        self.notionClient = notionClient ?? NotionClient(clientId: clientId, clientSecret: clientSecret)
     }
     
     // MARK: - OAuth Methods
@@ -57,10 +57,9 @@ public class NotionVaporClient: @unchecked Sendable {
     /// - Returns: The OAuth URL
     public func getOAuthURL(state: String? = nil, ownerType: String? = nil) -> URL {
         return notionClient.getOAuthURL(
-            clientId: clientId,
-            redirectUri: redirectUri,
+            redirectURI: redirectUri,
             state: state,
-            ownerType: ownerType
+            userId: nil
         )
     }
     
@@ -107,10 +106,8 @@ public class NotionVaporClient: @unchecked Sendable {
         do {
             // Exchange code for token using the notionClient
             let token = try await notionClient.exchangeCodeForToken(
-                code: code,
-                clientId: clientId,
-                clientSecret: clientSecret,
-                redirectUri: redirectUri
+                userId: userId,
+                code: code
             )
             
             // Save token to storage
@@ -182,6 +179,7 @@ public class NotionVaporClient: @unchecked Sendable {
             throw Abort(.unauthorized, reason: "Notion token expired")
         }
         
+        // Fetch and return pages
         return try await notionClient.listPages(token: token.accessToken)
     }
     
@@ -211,6 +209,22 @@ public class NotionVaporClient: @unchecked Sendable {
             token: token.accessToken,
             query: query
         )
+    }
+    
+    /// Get blocks for a specific page
+    public func getPageBlocks(for userId: String, pageId: String) async throws -> [NotionBlock] {
+        // Get token for user
+        guard let token = try await tokenStorage.getToken(userId: userId) else {
+            throw Abort(.unauthorized, reason: "User not connected to Notion")
+        }
+        
+        // Check if token is expired
+        if token.isExpired {
+            throw Abort(.unauthorized, reason: "Notion token expired")
+        }
+        
+        // Fetch and return page blocks
+        return try await notionClient.getPageBlocks(token: token.accessToken, pageId: pageId)
     }
     
     /// Gets the client ID (for diagnostics)

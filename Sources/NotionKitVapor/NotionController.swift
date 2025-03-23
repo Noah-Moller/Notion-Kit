@@ -43,6 +43,10 @@ public struct NotionController {
         
         // Register diagnostic routes
         apiGroup.get("notion", "diagnostic", use: diagnostic)
+        
+        // Register new routes
+        routeGroup.get("notion", "auth", "url", use: authURL)
+        routeGroup.get("notion", "pages", ":pageId", "blocks", use: getPageBlocks)
     }
     
     // MARK: - Handlers
@@ -189,6 +193,24 @@ public struct NotionController {
         }
     }
     
+    /// Get the OAuth URL for client-side authentication
+    /// - Parameter req: The request
+    /// - Returns: A response with the OAuth URL
+    public static func authURL(req: Request) async throws -> Response {
+        // Generate state for CSRF protection
+        let state = UUID().uuidString
+        
+        // Get OAuth URL
+        let oauthURL = req.application.notion.getOAuthURL(state: state)
+        
+        // Return the URL as JSON
+        let response = ["url": oauthURL.absoluteString, "state": state]
+        return try await Response(
+            status: .ok,
+            body: .init(data: JSONEncoder().encode(response))
+        )
+    }
+    
     /// Handle list databases request
     /// - Parameter req: The request
     /// - Returns: The databases response
@@ -307,6 +329,54 @@ public struct NotionController {
         return try await pagesResponse.encodeResponse(for: req)
     }
     
+    /// Handle request to get page blocks
+    public static func getPageBlocks(req: Request) async throws -> Response {
+        // Get the user ID from the authenticated user or from query parameters
+        let userId = getUserId(from: req) ?? req.query[String.self, at: "user_id"]
+        let pageId = req.parameters.get("pageId")!
+        
+        req.logger.info("Getting blocks for page \(pageId) for user \(userId ?? "unknown")")
+        
+        if userId == nil {
+            return try await Response(
+                status: .badRequest,
+                body: .init(string: "Missing user_id parameter")
+            )
+        }
+        
+        do {
+            let blocks = try await req.application.notion.getPageBlocks(for: userId!, pageId: pageId)
+            
+            struct BlocksResponse: Content {
+                let count: Int
+                let blocks: [NotionBlock]
+            }
+            
+            let response = BlocksResponse(
+                count: blocks.count,
+                blocks: blocks
+            )
+            
+            return try await response.encodeResponse(for: req)
+        } catch {
+            if let abort = error as? Abort {
+                let errorResponse = ["error": abort.reason]
+                return try await Response(
+                    status: abort.status,
+                    body: .init(data: JSONEncoder().encode(errorResponse))
+                )
+            } else {
+                req.logger.error("Error getting page blocks: \(error)")
+                
+                let errorResponse = ["error": error.localizedDescription]
+                return try await Response(
+                    status: .internalServerError,
+                    body: .init(data: JSONEncoder().encode(errorResponse))
+                )
+            }
+        }
+    }
+    
     // MARK: - Diagnostic
     
     /// Diagnostic endpoint to check configuration
@@ -336,5 +406,17 @@ public struct NotionController {
         )
         
         return try await response.encodeResponse(for: req)
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Helper to get the user ID from an authenticated user
+    /// - Parameter req: The request
+    /// - Returns: The user ID if available
+    private static func getUserId(from req: Request) -> String? {
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
+            return authenticatedUser.id
+        }
+        return nil
     }
 } 

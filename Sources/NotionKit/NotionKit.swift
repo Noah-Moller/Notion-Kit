@@ -59,34 +59,13 @@ public struct NotionTokenRequest: Codable {
 }
 
 /// Model for the OAuth token response
-public struct NotionTokenResponse: Codable {
-    public let accessToken: String
-    public let botId: String
-    public let duplicatedTemplateId: String?
-    public let workspaceId: String
-    public let workspaceName: String
-    public let workspaceIcon: String?
-    public let owner: NotionOwner
-    
-    private enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case botId = "bot_id"
-        case duplicatedTemplateId = "duplicated_template_id"
-        case workspaceId = "workspace_id"
-        case workspaceName = "workspace_name"
-        case workspaceIcon = "workspace_icon"
-        case owner
-    }
-    
-    public var token: NotionToken {
-        NotionToken(
-            accessToken: accessToken,
-            botId: botId,
-            workspaceId: workspaceId,
-            workspaceName: workspaceName,
-            workspaceIcon: workspaceIcon
-        )
-    }
+public struct NotionTokenResponse: Codable, Sendable {
+    public let access_token: String
+    public let token_type: String
+    public let bot_id: String
+    public let workspace_id: String
+    public let workspace_name: String
+    public let workspace_icon: String?
 }
 
 public struct NotionOwner: Codable {
@@ -651,11 +630,9 @@ public struct NotionDatabaseItem: Codable, Sendable {
 
 /// Represents a Notion page
 public struct NotionPage: Codable, Identifiable, Sendable {
-    public typealias ID = String
-    
     public let id: String
     public let url: String
-    public let properties: [String: String]
+    public var properties: [String: String]
     
     public init(id: String, url: String, properties: [String: String]) {
         self.id = id
@@ -664,15 +641,320 @@ public struct NotionPage: Codable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Property Value Models
+
+public struct PropertyValue: Codable, Sendable {
+    public let type: String
+    public let id: String?
+    public let title: [RichTextItem]?
+    public let rich_text: [RichTextItem]?
+    public let number: Double?
+    public let select: SelectOption?
+    public let multi_select: [SelectOption]?
+    public let date: DateValue?
+    public let formula: FormulaValue?
+    public let checkbox: Bool?
+    public let url: String?
+    public let email: String?
+    public let phone_number: String?
+    public let people: [Person]?
+    public let relation: [Relation]?
+    public let rollup: RollupValue?
+    
+    public var displayValue: String {
+        switch type {
+        case "title":
+            return title?.map { $0.plain_text }.joined() ?? ""
+        case "rich_text":
+            return rich_text?.map { $0.plain_text }.joined() ?? ""
+        case "number":
+            return number?.description ?? ""
+        case "select":
+            return select?.name ?? ""
+        case "multi_select":
+            return multi_select?.map { $0.name }.joined(separator: ", ") ?? ""
+        case "date":
+            return date?.start ?? ""
+        case "checkbox":
+            return checkbox == true ? "Yes" : "No"
+        case "url":
+            return url ?? ""
+        case "email":
+            return email ?? ""
+        case "phone_number":
+            return phone_number ?? ""
+        case "formula":
+            return formula?.displayValue ?? ""
+        default:
+            return ""
+        }
+    }
+}
+
+public struct SelectOption: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let color: String
+}
+
+public struct DateValue: Codable, Sendable {
+    public let start: String
+    public let end: String?
+    public let time_zone: String?
+}
+
+public struct FormulaValue: Codable, Sendable {
+    public let type: String
+    public let string: String?
+    public let number: Double?
+    public let boolean: Bool?
+    public let date: DateValue?
+    
+    public var displayValue: String {
+        switch type {
+        case "string":
+            return string ?? ""
+        case "number":
+            return number?.description ?? ""
+        case "boolean":
+            return boolean == true ? "Yes" : "No"
+        case "date":
+            return date?.start ?? ""
+        default:
+            return ""
+        }
+    }
+}
+
+public struct Person: Codable, Sendable {
+    public let id: String
+    public let name: String?
+    public let avatar_url: String?
+    public let object: String
+}
+
+public struct Relation: Codable, Sendable {
+    public let id: String
+}
+
+public struct RollupValue: Codable, Sendable {
+    public let type: String
+    public let number: Double?
+    public let date: DateValue?
+    public let array: [RollupArrayItem]?
+    
+    public var displayValue: String {
+        switch type {
+        case "number":
+            return number?.description ?? ""
+        case "date":
+            return date?.start ?? ""
+        default:
+            return ""
+        }
+    }
+}
+
+public struct RollupArrayItem: Codable, Sendable {
+    public let type: String
+}
+
+// MARK: - Block Models
+
+public struct NotionBlock: Codable, Identifiable, Sendable {
+    public let id: String
+    public let type: String
+    public var has_children: Bool
+    public let created_time: String
+    public let last_edited_time: String
+    
+    // Different block types
+    public var paragraph: ParagraphBlock?
+    public var heading_1: HeadingBlock?
+    public var heading_2: HeadingBlock?
+    public var heading_3: HeadingBlock?
+    public var bulleted_list_item: ListItemBlock?
+    public var numbered_list_item: ListItemBlock?
+    public var to_do: ToDoBlock?
+    public var toggle: ToggleBlock?
+    public var code: CodeBlock?
+    public var image: FileBlock?
+    public var divider: EmptyBlock?
+    public var callout: CalloutBlock?
+    public var quote: QuoteBlock?
+    
+    public var content: String {
+        switch type {
+        case "paragraph":
+            return paragraph?.richText ?? ""
+        case "heading_1":
+            return heading_1?.richText ?? ""
+        case "heading_2":
+            return heading_2?.richText ?? ""
+        case "heading_3":
+            return heading_3?.richText ?? ""
+        case "bulleted_list_item":
+            return bulleted_list_item?.richText ?? ""
+        case "numbered_list_item":
+            return numbered_list_item?.richText ?? ""
+        case "to_do":
+            return to_do?.richText ?? ""
+        case "toggle":
+            return toggle?.richText ?? ""
+        case "code":
+            return code?.richText ?? ""
+        case "callout":
+            return callout?.richText ?? ""
+        case "quote":
+            return quote?.richText ?? ""
+        default:
+            return ""
+        }
+    }
+}
+
+public struct ParagraphBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct HeadingBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct ListItemBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct ToDoBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    public var checked: Bool
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct ToggleBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct CodeBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var language: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct QuoteBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct CalloutBlock: Codable, Sendable {
+    public var rich_text: [RichTextItem]
+    public var icon: Icon
+    public var color: String
+    
+    public var richText: String {
+        rich_text.map { $0.plain_text }.joined()
+    }
+}
+
+public struct Icon: Codable, Sendable {
+    public var type: String
+    public var emoji: String?
+}
+
+public struct FileBlock: Codable, Sendable {
+    public var type: String
+    public var file: FileDetails?
+    public var external: ExternalFile?
+    
+    public var url: String? {
+        if type == "file" {
+            return file?.url
+        } else if type == "external" {
+            return external?.url
+        }
+        return nil
+    }
+}
+
+public struct FileDetails: Codable, Sendable {
+    public var url: String
+    public var expiry_time: String?
+}
+
+public struct ExternalFile: Codable, Sendable {
+    public var url: String
+}
+
+public struct EmptyBlock: Codable, Sendable {
+    // This is used for blocks that don't have any content (like dividers)
+}
+
+public struct RichTextItem: Codable, Sendable {
+    public var type: String
+    public var text: TextContent?
+    public var annotations: Annotations?
+    public var plain_text: String
+    public var href: String?
+}
+
+public struct TextContent: Codable, Sendable {
+    public var content: String
+    public var link: Link?
+}
+
+public struct Link: Codable, Sendable {
+    public var url: String
+}
+
+public struct Annotations: Codable, Sendable {
+    public var bold: Bool
+    public var italic: Bool
+    public var strikethrough: Bool
+    public var underline: Bool
+    public var code: Bool
+    public var color: String
+}
+
 // MARK: - Protocols
 
-/// Protocol for Notion API client
-public protocol NotionClientProtocol: Sendable {
-    /// Get OAuth URL for user authentication
-    func getOAuthURL(clientId: String, redirectUri: String, state: String?, ownerType: String?) -> URL
+/// Protocol for the Notion client
+public protocol NotionClientProtocol {
+    /// Get the OAuth URL for a user to connect to Notion
+    func getOAuthURL(redirectURI: String, state: String?, userId: String?) -> URL
     
-    /// Exchange OAuth code for token
-    func exchangeCodeForToken(code: String, clientId: String, clientSecret: String, redirectUri: String) async throws -> NotionToken
+    /// Exchange a code for an access token
+    func exchangeCodeForToken(userId: String?, code: String) async throws -> NotionToken
     
     /// List databases accessible to the token
     func listDatabases(token: String) async throws -> [NotionDatabase]
@@ -680,7 +962,10 @@ public protocol NotionClientProtocol: Sendable {
     /// List pages accessible to the token
     func listPages(token: String) async throws -> [NotionPage]
     
-    /// Query a database with optional filters and sorting
+    /// Retrieve blocks for a specific page
+    func getPageBlocks(token: String, pageId: String) async throws -> [NotionBlock]
+    
+    /// Query a database with optional filter, sort, and pagination
     func queryDatabase(databaseId: String, token: String, query: NotionDatabaseQueryRequest?) async throws -> NotionPaginatedResponse<NotionDatabaseItem>
 }
 
