@@ -38,6 +38,9 @@ public struct NotionController {
         apiGroup.post("notion", "token", use: exchangeToken)
         apiGroup.get("notion", "databases", use: listDatabases)
         apiGroup.post("notion", "databases", ":databaseId", "query", use: queryDatabase)
+        
+        // Register diagnostic routes
+        apiGroup.get("notion", "diagnostic", use: diagnostic)
     }
     
     // MARK: - Handlers
@@ -101,50 +104,87 @@ public struct NotionController {
             }
         }
         
-        let tokenRequest = try req.content.decode(TokenRequest.self)
-        
-        // Get user ID from authenticated user or request
-        let userId: String
-        if let authenticatedUser = req.auth.get(SimpleUser.self) {
-            userId = authenticatedUser.id
-        } else if let userIdParam = req.query[String.self, at: "user_id"] {
-            userId = userIdParam
-        } else {
-            throw Abort(.badRequest, reason: "User ID not provided")
-        }
-        
-        // Exchange code for token directly without creating a mock request
-        let token = try await req.application.notion.exchangeCodeForToken(
-            userId: userId, 
-            code: tokenRequest.code
-        )
-        
-        // Create response
-        struct TokenResponse: Content, Sendable {
-            let accessToken: String
-            let botId: String
-            let workspaceId: String
-            let workspaceName: String
-            let workspaceIcon: String?
+        do {
+            let tokenRequest = try req.content.decode(TokenRequest.self)
             
-            enum CodingKeys: String, CodingKey {
-                case accessToken = "access_token"
-                case botId = "bot_id"
-                case workspaceId = "workspace_id"
-                case workspaceName = "workspace_name"
-                case workspaceIcon = "workspace_icon"
+            // Get user ID from authenticated user or request
+            let userId: String
+            if let authenticatedUser = req.auth.get(SimpleUser.self) {
+                userId = authenticatedUser.id
+                req.logger.debug("Using user ID from authenticated user: \(userId)")
+            } else if let userIdParam = req.query[String.self, at: "user_id"] {
+                userId = userIdParam
+                req.logger.debug("Using user ID from query parameter: \(userId)")
+            } else {
+                req.logger.error("No user ID provided in request")
+                throw Abort(.badRequest, reason: "User ID not provided")
             }
+            
+            req.logger.info("Exchanging code for token for user: \(userId)")
+            req.logger.debug("Redirect URI: \(tokenRequest.redirectUri)")
+            
+            // Exchange code for token directly without creating a mock request
+            let token = try await req.application.notion.exchangeCodeForToken(
+                userId: userId, 
+                code: tokenRequest.code
+            )
+            
+            req.logger.info("Successfully exchanged code for token")
+            req.logger.debug("Workspace: \(token.workspaceName)")
+            
+            // Create response
+            struct TokenResponse: Content, Sendable {
+                let accessToken: String
+                let botId: String
+                let workspaceId: String
+                let workspaceName: String
+                let workspaceIcon: String?
+                
+                enum CodingKeys: String, CodingKey {
+                    case accessToken = "access_token"
+                    case botId = "bot_id"
+                    case workspaceId = "workspace_id"
+                    case workspaceName = "workspace_name"
+                    case workspaceIcon = "workspace_icon"
+                }
+            }
+            
+            let tokenResponse = TokenResponse(
+                accessToken: token.accessToken,
+                botId: token.botId,
+                workspaceId: token.workspaceId,
+                workspaceName: token.workspaceName,
+                workspaceIcon: token.workspaceIcon
+            )
+            
+            return try await tokenResponse.encodeResponse(for: req)
+        } catch let error as DecodingError {
+            req.logger.error("Failed to decode request: \(error)")
+            let details = extractDecodingErrorDetails(error)
+            throw Abort(.badRequest, reason: "Invalid request format: \(details)")
+        } catch let error as Abort {
+            req.logger.error("Abort error: \(error.reason)")
+            throw error
+        } catch {
+            req.logger.error("Failed to exchange code for token: \(error)")
+            throw Abort(.internalServerError, reason: "Failed to exchange code for token: \(error.localizedDescription)")
         }
-        
-        let tokenResponse = TokenResponse(
-            accessToken: token.accessToken,
-            botId: token.botId,
-            workspaceId: token.workspaceId,
-            workspaceName: token.workspaceName,
-            workspaceIcon: token.workspaceIcon
-        )
-        
-        return try await tokenResponse.encodeResponse(for: req)
+    }
+    
+    // Helper function to extract readable details from DecodingError
+    private static func extractDecodingErrorDetails(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, _):
+            return "Required field missing: \(key.stringValue)"
+        case .valueNotFound(_, let context):
+            return "Value missing for: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"
+        case .typeMismatch(_, let context):
+            return "Type mismatch at: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"
+        case .dataCorrupted(let context):
+            return "Data corrupted: \(context.debugDescription)"
+        @unknown default:
+            return "Unknown decoding error"
+        }
     }
     
     /// Handle list databases request
@@ -231,5 +271,36 @@ public struct NotionController {
         )
         
         return try await queryResponse.encodeResponse(for: req)
+    }
+    
+    // MARK: - Diagnostic
+    
+    /// Diagnostic endpoint to check configuration
+    /// - Parameter req: The request
+    /// - Returns: The diagnostic response
+    public static func diagnostic(req: Request) async throws -> Response {
+        struct DiagnosticResponse: Content, Sendable {
+            let clientId: String
+            let redirectUri: String
+            let serverTime: Date
+            let serverVersion: String
+        }
+        
+        // Get masked client ID (first 5 chars)
+        let clientId = req.application.notion.getClientId()
+        let maskedClientId = clientId.count > 5 
+            ? String(clientId.prefix(5)) + "..." 
+            : "Invalid"
+        
+        let redirectUri = req.application.notion.getRedirectUri()
+        
+        let response = DiagnosticResponse(
+            clientId: maskedClientId,
+            redirectUri: redirectUri,
+            serverTime: Date(),
+            serverVersion: "NotionKit 1.0"
+        )
+        
+        return try await response.encodeResponse(for: req)
     }
 } 

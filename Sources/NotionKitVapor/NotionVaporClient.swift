@@ -96,18 +96,42 @@ public class NotionVaporClient: @unchecked Sendable {
     ///   - code: The authorization code from the OAuth flow
     /// - Returns: The token
     public func exchangeCodeForToken(userId: String, code: String) async throws -> NotionToken {
-        // Exchange code for token using the notionClient
-        let token = try await notionClient.exchangeCodeForToken(
-            code: code,
-            clientId: clientId,
-            clientSecret: clientSecret,
-            redirectUri: redirectUri
-        )
+        // Log the inputs for debugging
+        print("=== NotionKit Debug ===")
+        print("Exchanging code for token with:")
+        print("- userId: \(userId)")
+        print("- code: \(String(code.prefix(5)))...") // Only show start of code for security
+        print("- clientId: \(String(clientId.prefix(5)))...")
+        print("- redirectUri: \(redirectUri)")
         
-        // Save token to storage
-        try await tokenStorage.saveToken(userId: userId, token: token)
-        
-        return token
+        do {
+            // Exchange code for token using the notionClient
+            let token = try await notionClient.exchangeCodeForToken(
+                code: code,
+                clientId: clientId,
+                clientSecret: clientSecret,
+                redirectUri: redirectUri
+            )
+            
+            // Save token to storage
+            try await tokenStorage.saveToken(userId: userId, token: token)
+            print("=== Token exchange successful ===")
+            print("- workspace: \(token.workspaceName)")
+            
+            return token
+        } catch let error as NotionError {
+            print("=== Notion API Error ===")
+            print("- Status: \(error.status)")
+            print("- Code: \(error.code)")
+            print("- Message: \(error.message)")
+            print("=========================")
+            throw error
+        } catch {
+            print("=== Token Exchange Error ===")
+            print("- Error: \(error)")
+            print("=========================")
+            throw error
+        }
     }
     
     // MARK: - Token Management
@@ -170,6 +194,18 @@ public class NotionVaporClient: @unchecked Sendable {
             token: token.accessToken,
             query: query
         )
+    }
+    
+    /// Gets the client ID (for diagnostics)
+    /// - Returns: The client ID
+    public func getClientId() -> String {
+        return clientId
+    }
+    
+    /// Gets the redirect URI (for diagnostics)
+    /// - Returns: The redirect URI
+    public func getRedirectUri() -> String {
+        return redirectUri
     }
 }
 

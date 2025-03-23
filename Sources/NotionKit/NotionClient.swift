@@ -84,6 +84,9 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
     public func exchangeCodeForToken(code: String, clientId: String, clientSecret: String, redirectUri: String) async throws -> NotionToken {
         let tokenURL = URL(string: "https://api.notion.com/v1/oauth/token")!
         
+        print("=== NotionKit Core Debug ===")
+        print("Making token exchange request to: \(tokenURL)")
+        
         // Create request with authorization header
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
@@ -99,30 +102,54 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         // Create request body
         let tokenRequest = NotionTokenRequest(code: code, redirectUri: redirectUri)
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(tokenRequest)
+        let requestBody = try encoder.encode(tokenRequest)
+        request.httpBody = requestBody
+        
+        print("Request body: \(String(data: requestBody, encoding: .utf8) ?? "Unable to decode")")
         
         // Make request
         let (data, response) = try await URLSession.shared.data(for: request)
         
         // Handle error responses
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("=== Invalid response (not HTTP) ===")
             throw NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
+        
+        print("Response status code: \(httpResponse.statusCode)")
+        print("Response body: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
         
         if httpResponse.statusCode != 200 {
             // Try to decode error
             let decoder = JSONDecoder()
             if let error = try? decoder.decode(NotionError.self, from: data) {
+                print("=== Notion Error ===")
+                print("Status: \(error.status)")
+                print("Code: \(error.code)")
+                print("Message: \(error.message)")
                 throw error
             } else {
+                print("=== HTTP Error ===")
+                print("Status Code: \(httpResponse.statusCode)")
+                print("Response body: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
                 throw NSError(domain: "NotionKitError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode)"])
             }
         }
         
         // Decode token response
         let decoder = JSONDecoder()
-        let tokenResponse = try decoder.decode(NotionTokenResponse.self, from: data)
-        return tokenResponse.token
+        
+        do {
+            let tokenResponse = try decoder.decode(NotionTokenResponse.self, from: data)
+            print("=== Token Response Success ===")
+            print("Workspace: \(tokenResponse.token.workspaceName)")
+            return tokenResponse.token
+        } catch {
+            print("=== Token Decoding Error ===")
+            print("Error: \(error)")
+            print("Raw data: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
+            throw error
+        }
     }
     
     // MARK: - API Methods
