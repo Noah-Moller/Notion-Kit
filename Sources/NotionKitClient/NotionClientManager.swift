@@ -393,16 +393,52 @@ public class NotionClientManager: ObservableObject {
                     let decoder = JSONDecoder()
                     
                     struct PagesResponse: Decodable {
-                        let count: Int
+                        var count: Int
                         let pages: [NotionPage]
+                        
+                        // Add custom decoding to handle both formats
+                        init(from decoder: Decoder) throws {
+                            do {
+                                // Try to decode as object with count and pages
+                                let container = try decoder.container(keyedBy: CodingKeys.self)
+                                self.count = try container.decode(Int.self, forKey: .count)
+                                self.pages = try container.decode([NotionPage].self, forKey: .pages)
+                            } catch {
+                                // Try to decode as direct array of pages
+                                let pages = try [NotionPage].init(from: decoder)
+                                self.count = pages.count
+                                self.pages = pages
+                            }
+                        }
+                        
+                        private enum CodingKeys: String, CodingKey {
+                            case count, pages
+                        }
                     }
                     
-                    let pagesResponse = try decoder.decode(PagesResponse.self, from: data)
-                    print("Successfully decoded \(pagesResponse.pages.count) pages")
-                    
-                    DispatchQueue.main.async { [weak self] in
-                        self?.pages = pagesResponse.pages
-                        self?.isLoading = false
+                    do {
+                        let pagesResponse = try decoder.decode(PagesResponse.self, from: data)
+                        print("Successfully decoded \(pagesResponse.pages.count) pages")
+                        
+                        DispatchQueue.main.async { [weak self] in
+                            self?.pages = pagesResponse.pages
+                            self?.isLoading = false
+                        }
+                    } catch {
+                        print("Decoding error: \(error)")
+                        // Try to decode as direct array
+                        do {
+                            let pages = try decoder.decode([NotionPage].self, from: data)
+                            print("Successfully decoded \(pages.count) pages (direct array)")
+                            DispatchQueue.main.async { [weak self] in
+                                self?.pages = pages
+                                self?.isLoading = false
+                            }
+                            return
+                        } catch {
+                            print("Failed to decode even as direct array: \(error)")
+                            throw error
+                        }
                     }
                 } catch let urlError as URLError {
                     print("Network error: \(urlError.localizedDescription)")

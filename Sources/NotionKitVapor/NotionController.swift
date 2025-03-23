@@ -322,10 +322,14 @@ public struct NotionController {
         
         // Create response
         struct PagesResponse: Content, Sendable {
+            let count: Int
             let pages: [NotionPage]
         }
         
-        let pagesResponse = PagesResponse(pages: pages)
+        let pagesResponse = PagesResponse(
+            count: pages.count,
+            pages: pages
+        )
         
         return try await pagesResponse.encodeResponse(for: req)
     }
