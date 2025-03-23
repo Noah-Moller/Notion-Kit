@@ -113,32 +113,11 @@ public struct NotionController {
             throw Abort(.badRequest, reason: "User ID not provided")
         }
         
-        // Create URL components for the callback
-        var components = URLComponents()
-        if let redirectUrl = URL(string: tokenRequest.redirectUri) {
-            components.scheme = redirectUrl.scheme
-            components.host = redirectUrl.host
-            components.path = redirectUrl.path
-        }
-        components.queryItems = [URLQueryItem(name: "code", value: tokenRequest.code)]
-        
-        guard let callbackUrl = components.url else {
-            throw Abort(.badRequest, reason: "Invalid redirect URI")
-        }
-        
-        // Mock a request for the callback
-        let mockRequest = Request(
-            application: req.application,
-            method: HTTPMethod.GET,
-            url: URI(string: callbackUrl.absoluteString),
-            on: req.eventLoop
+        // Exchange code for token directly without creating a mock request
+        let token = try await req.application.notion.exchangeCodeForToken(
+            userId: userId, 
+            code: tokenRequest.code
         )
-        if let host = components.host {
-            mockRequest.headers.replaceOrAdd(name: HTTPHeaders.Name.host, value: host)
-        }
-        
-        // Handle callback and exchange code for token
-        let token = try await req.application.notion.handleCallback(request: mockRequest, userId: userId)
         
         // Create response
         struct TokenResponse: Content, Sendable {
