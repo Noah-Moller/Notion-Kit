@@ -433,7 +433,30 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
             }
             
             // Extract page properties
-            let pageProperties: [String: String] = [:]
+            var pageProperties: [String: String] = [:]
+            
+            // Try to extract the title from properties
+            if let properties = result.properties,
+               let titleProperty = properties["title"] as? [String: Any],
+               let titleArray = titleProperty["title"] as? [[String: Any]] {
+                
+                // Extract plain text from title
+                var titleText = ""
+                for titleItem in titleArray {
+                    if let plainText = titleItem["plain_text"] as? String {
+                        titleText += plainText
+                    }
+                }
+                
+                if !titleText.isEmpty {
+                    pageProperties["title"] = titleText
+                }
+            }
+            
+            // If we couldn't extract a title from properties, use a default
+            if pageProperties["title"] == nil {
+                pageProperties["title"] = "Untitled Page"
+            }
             
             return NotionPage(
                 id: result.id,
