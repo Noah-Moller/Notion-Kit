@@ -1,6 +1,9 @@
 import Foundation
 import Vapor
 @preconcurrency import NotionKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A Vapor-specific implementation of the Notion API client
 public class NotionVaporClient: @unchecked Sendable {
