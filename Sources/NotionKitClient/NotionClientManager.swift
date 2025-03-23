@@ -2,6 +2,9 @@ import Foundation
 import SwiftUI
 import AuthenticationServices
 import NotionKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A SwiftUI implementation of the Notion API client manager
 public class NotionClientManager: ObservableObject {

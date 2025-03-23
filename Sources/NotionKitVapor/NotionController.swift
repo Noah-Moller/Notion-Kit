@@ -1,6 +1,9 @@
 import Foundation
 import Vapor
 @preconcurrency import NotionKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A Vapor controller for handling Notion API requests
 public struct NotionController {

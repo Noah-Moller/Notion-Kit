@@ -2,6 +2,9 @@
 // https://docs.swift.org/swift-book
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The main entry point for the NotionKit package that provides shared functionality
 /// for both client and server implementations.

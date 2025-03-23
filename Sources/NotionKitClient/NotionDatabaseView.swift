@@ -6,6 +6,9 @@ import AppKit
 import UIKit
 #endif
 import NotionKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A SwiftUI view that displays a list of Notion databases and allows users to connect to Notion.
 public struct NotionDatabaseView: View {

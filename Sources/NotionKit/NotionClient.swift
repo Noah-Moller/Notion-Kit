@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Implementation of the Notion API client
 public class NotionClient: NotionClientProtocol, @unchecked Sendable {
