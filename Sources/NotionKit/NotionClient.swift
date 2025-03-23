@@ -158,20 +158,38 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
     /// - Parameter token: The access token
     /// - Returns: An array of databases
     public func listDatabases(token: String) async throws -> [NotionDatabase] {
-        let url = baseURL.appendingPathComponent("databases")
+        // Use the search endpoint instead of the deprecated databases endpoint
+        let searchURL = baseURL.appendingPathComponent("search")
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        // Create request
+        var request = URLRequest(url: searchURL)
+        request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version") // Use appropriate version
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")  // Using a recent Notion API version
         
+        // Create body to filter for databases only
+        let requestBody: [String: Any] = [
+            "filter": ["value": "database", "property": "object"]
+        ]
+        
+        // Encode body
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("=== Database List Request ===")
+        print("URL: \(searchURL)")
+        print("Headers: \(request.allHTTPHeaderFields ?? [:])")
+        
+        // Make request
         let (data, response) = try await URLSession.shared.data(for: request)
         
         // Handle error responses
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
+        
+        print("Database List Response Status: \(httpResponse.statusCode)")
+        print("Response Body: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
         
         if httpResponse.statusCode != 200 {
             // Try to decode error
@@ -183,10 +201,55 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
             }
         }
         
-        // Decode database list
+        // Parse the search response
+        struct SearchResponse: Decodable {
+            let results: [DatabaseResult]
+            let hasMore: Bool
+            let nextCursor: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case results
+                case hasMore = "has_more"
+                case nextCursor = "next_cursor"
+            }
+        }
+        
+        struct DatabaseResult: Decodable {
+            let id: String
+            let object: String
+            let title: [TitleItem]?
+            let properties: [String: PropertyDefinition]
+            
+            // Add any other fields you need from the database object
+        }
+        
+        struct TitleItem: Decodable {
+            let plainText: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case plainText = "plain_text"
+            }
+        }
+        
+        // Decode the response
         let decoder = JSONDecoder()
-        let apiResponse = try decoder.decode(NotionPaginatedResponse<NotionDatabase>.self, from: data)
-        return apiResponse.results
+        let searchResponse = try decoder.decode(SearchResponse.self, from: data)
+        
+        // Map to NotionDatabase objects
+        return searchResponse.results.compactMap { result in
+            guard result.object == "database" else {
+                return nil
+            }
+            
+            // Extract the database name from title
+            let name = result.title?.first?.plainText ?? "Untitled Database"
+            
+            return NotionDatabase(
+                id: result.id,
+                name: name,
+                properties: result.properties
+            )
+        }
     }
     
     /// Query a database

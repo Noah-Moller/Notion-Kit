@@ -138,9 +138,9 @@ public struct NotionDatabase: Codable, Identifiable, Sendable {
     public typealias ID = String
     
     public let id: String
-    public let title: [NotionRichText]
-    public let properties: [String: NotionProperty]
-    public let url: String
+    public let title: [NotionRichText]?
+    public let properties: [String: PropertyDefinition]
+    public let url: String?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -149,7 +149,28 @@ public struct NotionDatabase: Codable, Identifiable, Sendable {
         case url
     }
     
-    public init(id: String, title: [NotionRichText], properties: [String: NotionProperty], url: String) {
+    public init(id: String, name: String, properties: [String: PropertyDefinition]) {
+        self.id = id
+        // Create a simple title from the name
+        self.title = [NotionRichText(
+            plainText: name,
+            href: nil,
+            annotations: NotionAnnotations(
+                bold: false,
+                italic: false,
+                strikethrough: false,
+                underline: false,
+                code: false,
+                color: "default"
+            ),
+            type: "text",
+            text: NotionTextContent(content: name, link: nil)
+        )]
+        self.properties = properties
+        self.url = nil
+    }
+    
+    public init(id: String, title: [NotionRichText], properties: [String: PropertyDefinition], url: String) {
         self.id = id
         self.title = title
         self.properties = properties
@@ -157,7 +178,22 @@ public struct NotionDatabase: Codable, Identifiable, Sendable {
     }
     
     public var name: String {
-        title.map { $0.plainText }.joined()
+        title?.map { $0.plainText }.joined() ?? "Untitled Database"
+    }
+}
+
+/// A property definition in a Notion database
+public struct PropertyDefinition: Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let type: String
+    
+    // Add other property type-specific fields as needed
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case type
     }
 }
 
