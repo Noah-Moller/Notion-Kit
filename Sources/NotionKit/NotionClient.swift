@@ -364,18 +364,24 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         
         // Handle error responses
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("Invalid response - not an HTTP response")
             throw NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
         
         print("Page List Response Status: \(httpResponse.statusCode)")
-        print("Response Body: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
+        
+        // Print a shorter version of the response for debugging
+        let responseString = String(data: data, encoding: .utf8) ?? "Unable to decode"
+        print("Response Body: \(responseString.prefix(500))...")
         
         if httpResponse.statusCode != 200 {
             // Try to decode error
             let decoder = JSONDecoder()
             if let error = try? decoder.decode(NotionError.self, from: data) {
+                print("Decoded error: \(error)")
                 throw error
             } else {
+                print("HTTP Error \(httpResponse.statusCode)")
                 throw NSError(domain: "NotionKitError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode)"])
             }
         }
@@ -397,72 +403,151 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
             let id: String
             let object: String
             let url: String
-            let properties: [String: [String: Any]]?
+            let properties: Properties
             
-            // Add any other fields you need from the page object
-            private enum CodingKeys: String, CodingKey {
-                case id
-                case object
-                case url
-                case properties
-            }
-            
-            public init(from decoder: Decoder) throws {
-                let container = try decoder.container(keyedBy: CodingKeys.self)
-                id = try container.decode(String.self, forKey: .id)
-                object = try container.decode(String.self, forKey: .object)
-                url = try container.decode(String.self, forKey: .url)
+            struct Properties: Decodable {
+                private let values: [String: Property]
                 
-                // For properties, we'll decode to a generic structure
-                if let propertiesData = try? container.decodeIfPresent(Data.self, forKey: .properties) {
-                    properties = try JSONSerialization.jsonObject(with: propertiesData) as? [String: [String: Any]]
-                } else {
-                    properties = nil
+                struct Property: Decodable {
+                    let id: String
+                    let type: String
+                    let title: [TitleItem]?
+                    let rich_text: [TitleItem]?
+                    let select: Select?
+                    let multi_select: [Select]?
+                    let date: DateValue?
+                    let email: String?
+                    let url: String?
+                    let status: Status?
+                    
+                    struct TitleItem: Decodable {
+                        let plain_text: String
+                    }
+                    
+                    struct Select: Decodable {
+                        let id: String?
+                        let name: String
+                        let color: String?
+                    }
+                    
+                    struct DateValue: Decodable {
+                        let start: String?
+                        let end: String?
+                    }
+                    
+                    struct Status: Decodable {
+                        let id: String?
+                        let name: String
+                        let color: String?
+                    }
+                }
+                
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.singleValueContainer()
+                    values = try container.decode([String: Property].self)
+                }
+                
+                subscript(key: String) -> Property? {
+                    return values[key]
+                }
+                
+                var allProperties: [String: Property] {
+                    return values
                 }
             }
         }
         
-        // Decode the response
+        // Attempt to decode the response
         let decoder = JSONDecoder()
-        let searchResponse = try decoder.decode(SearchResponse.self, from: data)
-        
-        // Map to NotionPage objects
-        return searchResponse.results.compactMap { result in
-            guard result.object == "page" else {
-                return nil
-            }
+        do {
+            let searchResponse = try decoder.decode(SearchResponse.self, from: data)
             
-            // Extract page properties
-            var pageProperties: [String: String] = [:]
+            // Debug info
+            print("Successfully decoded search response with \(searchResponse.results.count) results")
             
-            // Try to extract the title from properties
-            if let properties = result.properties,
-               let titleProperty = properties["title"] as? [String: Any],
-               let titleArray = titleProperty["title"] as? [[String: Any]] {
+            // Map to NotionPage objects
+            let pages = searchResponse.results.compactMap { (result: PageResult) -> NotionPage? in
+                guard result.object == "page" else {
+                    print("Skipping non-page object: \(result.object)")
+                    return nil
+                }
                 
-                // Extract plain text from title
-                var titleText = ""
-                for titleItem in titleArray {
-                    if let plainText = titleItem["plain_text"] as? String {
-                        titleText += plainText
+                // Extract page properties
+                var pageProperties: [String: String] = [:]
+                
+                // Extract title
+                if let titleProp = result.properties["title"],
+                   let titleItems = titleProp.title,
+                   !titleItems.isEmpty {
+                    let titleText = titleItems.map { $0.plain_text }.joined()
+                    pageProperties["title"] = titleText
+                    print("Found title property: \(titleText)")
+                } else if let titleProp = result.properties["Name"],
+                          let titleItems = titleProp.title,
+                          !titleItems.isEmpty {
+                    let titleText = titleItems.map { $0.plain_text }.joined()
+                    pageProperties["title"] = titleText
+                    print("Found Name property as title: \(titleText)")
+                }
+                
+                // Extract other property values
+                for (key, prop) in result.properties.allProperties {
+                    var value: String? = nil
+                    
+                    switch prop.type {
+                    case "rich_text":
+                        if let richText = prop.rich_text, !richText.isEmpty {
+                            value = richText.map { $0.plain_text }.joined()
+                        }
+                    case "select":
+                        if let select = prop.select {
+                            value = select.name
+                        }
+                    case "multi_select":
+                        if let multiSelect = prop.multi_select, !multiSelect.isEmpty {
+                            value = multiSelect.map { $0.name }.joined(separator: ", ")
+                        }
+                    case "date":
+                        if let date = prop.date, let start = date.start {
+                            value = start + (date.end != nil ? " - \(date.end!)" : "")
+                        }
+                    case "email":
+                        value = prop.email
+                    case "url":
+                        value = prop.url
+                    case "status":
+                        if let status = prop.status {
+                            value = status.name
+                        }
+                    default:
+                        // Skip other property types
+                        break
+                    }
+                    
+                    if let value = value {
+                        pageProperties[key] = value
                     }
                 }
                 
-                if !titleText.isEmpty {
-                    pageProperties["title"] = titleText
+                // If we couldn't extract a title from properties, use a default
+                if pageProperties["title"] == nil {
+                    pageProperties["title"] = "Untitled Page"
+                    print("Using default title for page \(result.id)")
                 }
+                
+                return NotionPage(
+                    id: result.id,
+                    url: result.url,
+                    properties: pageProperties
+                )
             }
             
-            // If we couldn't extract a title from properties, use a default
-            if pageProperties["title"] == nil {
-                pageProperties["title"] = "Untitled Page"
-            }
-            
-            return NotionPage(
-                id: result.id,
-                url: result.url,
-                properties: pageProperties
-            )
+            print("Returning \(pages.count) pages")
+            return pages
+        } catch {
+            print("Failed to decode search response: \(error)")
+            print("JSON structure: \(String(data: data.prefix(1000), encoding: .utf8) ?? "unable to show")")
+            throw NotionClientError.decodingError(error)
         }
     }
     
