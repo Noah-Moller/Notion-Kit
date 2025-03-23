@@ -31,12 +31,14 @@ public struct NotionController {
         routeGroup.get("notion", "callback", use: callback)
         routeGroup.post("notion", "token", use: exchangeToken)
         routeGroup.get("notion", "databases", use: listDatabases)
+        routeGroup.get("notion", "pages", use: listPages)
         routeGroup.post("notion", "databases", ":databaseId", "query", use: queryDatabase)
         
         // Register client-compatible routes
         let apiGroup = routeGroup.grouped("api")
         apiGroup.post("notion", "token", use: exchangeToken)
         apiGroup.get("notion", "databases", use: listDatabases)
+        apiGroup.get("notion", "pages", use: listPages)
         apiGroup.post("notion", "databases", ":databaseId", "query", use: queryDatabase)
         
         // Register diagnostic routes
@@ -271,6 +273,38 @@ public struct NotionController {
         )
         
         return try await queryResponse.encodeResponse(for: req)
+    }
+    
+    /// Handle list pages request
+    /// - Parameter req: The request
+    /// - Returns: The pages response
+    public static func listPages(req: Request) async throws -> Response {
+        // Get user ID from authenticated user or request
+        let userId: String
+        if let authenticatedUser = req.auth.get(SimpleUser.self) {
+            userId = authenticatedUser.id
+            req.logger.debug("Using user ID from authenticated user: \(userId)")
+        } else if let userIdParam = req.query[String.self, at: "user_id"] {
+            userId = userIdParam
+            req.logger.debug("Using user ID from query parameter: \(userId)")
+        } else {
+            req.logger.error("No user ID provided in request")
+            throw Abort(.badRequest, reason: "User ID not provided")
+        }
+        
+        req.logger.info("Listing pages for user: \(userId)")
+        
+        // Get pages
+        let pages = try await req.application.notion.listPages(for: userId)
+        
+        // Create response
+        struct PagesResponse: Content, Sendable {
+            let pages: [NotionPage]
+        }
+        
+        let pagesResponse = PagesResponse(pages: pages)
+        
+        return try await pagesResponse.encodeResponse(for: req)
     }
     
     // MARK: - Diagnostic

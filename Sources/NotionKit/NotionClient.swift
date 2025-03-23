@@ -338,4 +338,113 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
             )
         }
     }
+    
+    /// Search for pages across the workspace
+    /// - Parameter token: The access token
+    /// - Returns: An array of Notion pages
+    public func listPages(token: String) async throws -> [NotionPage] {
+        // Use the search endpoint with a filter for pages
+        let searchURL = baseURL.appendingPathComponent("search")
+        
+        // Create request
+        var request = URLRequest(url: searchURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        
+        // Create body to filter for pages only
+        let requestBody: [String: Any] = [
+            "filter": ["value": "page", "property": "object"]
+        ]
+        
+        // Encode body
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("=== Page List Request ===")
+        print("URL: \(searchURL)")
+        
+        // Make request
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // Handle error responses
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+        
+        print("Page List Response Status: \(httpResponse.statusCode)")
+        print("Response Body: \(String(data: data, encoding: .utf8) ?? "Unable to decode")")
+        
+        if httpResponse.statusCode != 200 {
+            // Try to decode error
+            let decoder = JSONDecoder()
+            if let error = try? decoder.decode(NotionError.self, from: data) {
+                throw error
+            } else {
+                throw NSError(domain: "NotionKitError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode)"])
+            }
+        }
+        
+        // Parse the search response
+        struct SearchResponse: Decodable {
+            let results: [PageResult]
+            let hasMore: Bool
+            let nextCursor: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case results
+                case hasMore = "has_more"
+                case nextCursor = "next_cursor"
+            }
+        }
+        
+        struct PageResult: Decodable {
+            let id: String
+            let object: String
+            let url: String
+            let properties: [String: [String: Any]]?
+            
+            // Add any other fields you need from the page object
+            private enum CodingKeys: String, CodingKey {
+                case id
+                case object
+                case url
+                case properties
+            }
+            
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                id = try container.decode(String.self, forKey: .id)
+                object = try container.decode(String.self, forKey: .object)
+                url = try container.decode(String.self, forKey: .url)
+                
+                // For properties, we'll decode to a generic structure
+                if let propertiesData = try? container.decodeIfPresent(Data.self, forKey: .properties) {
+                    properties = try JSONSerialization.jsonObject(with: propertiesData) as? [String: [String: Any]]
+                } else {
+                    properties = nil
+                }
+            }
+        }
+        
+        // Decode the response
+        let decoder = JSONDecoder()
+        let searchResponse = try decoder.decode(SearchResponse.self, from: data)
+        
+        // Map to NotionPage objects
+        return searchResponse.results.compactMap { result in
+            guard result.object == "page" else {
+                return nil
+            }
+            
+            // Extract page properties
+            let pageProperties: [String: String] = [:]
+            
+            return NotionPage(
+                id: result.id,
+                url: result.url,
+                properties: pageProperties
+            )
+        }
+    }
 } 

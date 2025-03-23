@@ -20,6 +20,9 @@ public class NotionClientManager: ObservableObject {
     /// The available databases
     @Published public private(set) var databases: [NotionDatabase] = []
     
+    /// The available pages
+    @Published public private(set) var pages: [NotionPage] = []
+    
     /// Any error that occurred
     @Published public private(set) var error: Error?
     
@@ -243,6 +246,7 @@ public class NotionClientManager: ObservableObject {
         token = nil
         isAuthenticated = false
         databases = []
+        pages = []
     }
     
     // MARK: - API Methods
@@ -293,6 +297,55 @@ public class NotionClientManager: ObservableObject {
                     let decoder = JSONDecoder()
                     let response = try decoder.decode(DatabasesResponse.self, from: data)
                     self.databases = response.databases
+                } catch {
+                    self.error = error
+                }
+            }
+        }.resume()
+    }
+    
+    /// Fetch available pages
+    public func fetchPages() {
+        guard isAuthenticated else {
+            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated with Notion"])
+            return
+        }
+        
+        isLoading = true
+        
+        // Build the URL for the pages endpoint
+        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/pages"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        
+        guard let pagesURL = components.url else {
+            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create pages URL"])
+            self.isLoading = false
+            return
+        }
+        
+        // Create request
+        var request = URLRequest(url: pagesURL)
+        request.httpMethod = "GET"
+        
+        // Make request
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isLoading = false
+                
+                if let error = error {
+                    self.error = error
+                    return
+                }
+                
+                guard let data = data else {
+                    self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No data received"])
+                    return
+                }
+                
+                do {
+                    let decoder = JSONDecoder()
+                    let response = try decoder.decode(PagesResponse.self, from: data)
+                    self.pages = response.pages
                 } catch {
                     self.error = error
                 }
@@ -469,6 +522,11 @@ private struct TokenResponse: Decodable {
 /// Response for databases list
 private struct DatabasesResponse: Decodable {
     let databases: [NotionDatabase]
+}
+
+/// Response for pages list
+private struct PagesResponse: Decodable {
+    let pages: [NotionPage]
 }
 
 // MARK: - View Extensions

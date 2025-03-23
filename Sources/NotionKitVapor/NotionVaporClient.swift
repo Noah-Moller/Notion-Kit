@@ -168,6 +168,23 @@ public class NotionVaporClient: @unchecked Sendable {
         return try await notionClient.listDatabases(token: token.accessToken)
     }
     
+    /// List all pages accessible to a user
+    /// - Parameter userId: The ID of the user
+    /// - Returns: An array of pages
+    public func listPages(for userId: String) async throws -> [NotionPage] {
+        // Get token for user
+        guard let token = try await tokenStorage.getToken(userId: userId) else {
+            throw Abort(.unauthorized, reason: "User not connected to Notion")
+        }
+        
+        // Check if token is expired
+        if token.isExpired {
+            throw Abort(.unauthorized, reason: "Notion token expired")
+        }
+        
+        return try await notionClient.listPages(token: token.accessToken)
+    }
+    
     /// Query a database
     /// - Parameters:
     ///   - databaseId: The ID of the database to query

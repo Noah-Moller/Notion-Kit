@@ -647,6 +647,23 @@ public struct NotionDatabaseItem: Codable, Sendable {
     }
 }
 
+// MARK: - Page Models
+
+/// Represents a Notion page
+public struct NotionPage: Codable, Identifiable, Sendable {
+    public typealias ID = String
+    
+    public let id: String
+    public let url: String
+    public let properties: [String: String]
+    
+    public init(id: String, url: String, properties: [String: String]) {
+        self.id = id
+        self.url = url
+        self.properties = properties
+    }
+}
+
 // MARK: - Protocols
 
 /// Protocol for Notion API client
@@ -659,6 +676,9 @@ public protocol NotionClientProtocol: Sendable {
     
     /// List databases accessible to the token
     func listDatabases(token: String) async throws -> [NotionDatabase]
+    
+    /// List pages accessible to the token
+    func listPages(token: String) async throws -> [NotionPage]
     
     /// Query a database with optional filters and sorting
     func queryDatabase(databaseId: String, token: String, query: NotionDatabaseQueryRequest?) async throws -> NotionPaginatedResponse<NotionDatabaseItem>
