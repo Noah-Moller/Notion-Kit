@@ -40,22 +40,28 @@ public class NotionClientManager: ObservableObject {
     /// The token storage
     private let tokenStorage: UserDefaultsNotionTokenStorage
     
+    /// The user ID to use in API requests
+    private let userId: String
+    
     // MARK: - Initialization
     
     /// Initialize a new client manager
     /// - Parameters:
     ///   - apiServerURL: The API server URL for token exchange and API calls
     ///   - clientId: The Notion OAuth client ID
+    ///   - userId: The user ID to use in API requests (defaults to "client-user")
     ///   - tokenStorage: An optional custom token storage
     ///   - notionClient: An optional custom Notion client
     public init(
         apiServerURL: URL,
         clientId: String,
+        userId: String = "client-user",
         tokenStorage: UserDefaultsNotionTokenStorage = UserDefaultsNotionTokenStorage(),
         notionClient: NotionClientProtocol = NotionClient()
     ) {
         self.apiServerURL = apiServerURL
         self.clientId = clientId
+        self.userId = userId
         self.tokenStorage = tokenStorage
         self.notionClient = notionClient
         
@@ -155,7 +161,14 @@ public class NotionClientManager: ObservableObject {
         isLoading = true
         
         // Build the URL for the token exchange endpoint on our server
-        let tokenURL = apiServerURL.appendingPathComponent("api/notion/token")
+        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/token"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        
+        guard let tokenURL = components.url else {
+            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create token URL"])
+            self.isLoading = false
+            return
+        }
         
         // Create request
         var request = URLRequest(url: tokenURL)
@@ -244,7 +257,14 @@ public class NotionClientManager: ObservableObject {
         isLoading = true
         
         // Build the URL for the databases endpoint on our server
-        let databasesURL = apiServerURL.appendingPathComponent("api/notion/databases")
+        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/databases"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        
+        guard let databasesURL = components.url else {
+            self.error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create databases URL"])
+            self.isLoading = false
+            return
+        }
         
         // Create request
         var request = URLRequest(url: databasesURL)
@@ -298,7 +318,16 @@ public class NotionClientManager: ObservableObject {
         isLoading = true
         
         // Build the URL for the database query endpoint on our server
-        let queryURL = apiServerURL.appendingPathComponent("api/notion/databases/\(databaseId)/query")
+        var components = URLComponents(url: apiServerURL.appendingPathComponent("api/notion/databases/\(databaseId)/query"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        
+        guard let queryURL = components.url else {
+            let error = NSError(domain: "NotionKitError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create query URL"])
+            self.error = error
+            self.isLoading = false
+            completion(.failure(error))
+            return
+        }
         
         // Create request
         var request = URLRequest(url: queryURL)

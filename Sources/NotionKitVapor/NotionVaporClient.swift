@@ -82,7 +82,16 @@ public class NotionVaporClient: @unchecked Sendable {
             throw Abort(.badRequest, reason: "Invalid state parameter")
         }
         
-        // Exchange code for token
+        return try await exchangeCodeForToken(userId: userId, code: code)
+    }
+    
+    /// Exchange an authorization code for a token without session validation
+    /// - Parameters:
+    ///   - userId: The ID of the user to associate with the token
+    ///   - code: The authorization code from the OAuth flow
+    /// - Returns: The token
+    public func exchangeCodeForToken(userId: String, code: String) async throws -> NotionToken {
+        // Exchange code for token using the notionClient
         let token = try await notionClient.exchangeCodeForToken(
             code: code,
             clientId: clientId,

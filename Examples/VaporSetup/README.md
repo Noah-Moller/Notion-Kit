@@ -65,9 +65,12 @@ When initializing the client-side manager, use:
 ```swift
 let notionClient = NotionClientManager(
     apiServerURL: URL(string: "https://your-app.com")!,
-    clientId: "your-notion-client-id"
+    clientId: "your-notion-client-id",
+    userId: "unique-user-identifier" // Important: This ID must be provided to identify the user
 )
 ```
+
+The `userId` parameter is critical - it's used in all API requests to identify which user's Notion tokens to use. This should be a unique identifier for the user in your system.
 
 ## Additional Resources
 
