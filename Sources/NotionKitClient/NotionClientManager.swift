@@ -503,6 +503,13 @@ public class NotionClientManager: ObservableObject {
                     )
                 }
                 
+                print("Page blocks response status: \(httpResponse.statusCode)")
+                
+                // Debug: Print the response body
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Response body: \(responseString.prefix(200))...")
+                }
+                
                 guard httpResponse.statusCode == 200 else {
                     let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
                     throw NSError(
@@ -515,15 +522,51 @@ public class NotionClientManager: ObservableObject {
                 let decoder = JSONDecoder()
                 
                 struct BlocksResponse: Decodable {
-                    let count: Int
+                    var count: Int
                     let blocks: [NotionBlock]
+                    
+                    // Add custom decoding to handle both formats
+                    init(from decoder: Decoder) throws {
+                        do {
+                            // Try to decode as object with count and blocks
+                            let container = try decoder.container(keyedBy: CodingKeys.self)
+                            self.count = try container.decode(Int.self, forKey: .count)
+                            self.blocks = try container.decode([NotionBlock].self, forKey: .blocks)
+                        } catch {
+                            // Try to decode as direct array of blocks
+                            let blocks = try [NotionBlock].init(from: decoder)
+                            self.count = blocks.count
+                            self.blocks = blocks
+                        }
+                    }
+                    
+                    private enum CodingKeys: String, CodingKey {
+                        case count, blocks
+                    }
                 }
                 
-                let blocksResponse = try decoder.decode(BlocksResponse.self, from: data)
-                
-                DispatchQueue.main.async { [weak self] in
-                    self?.pageBlocks = blocksResponse.blocks
-                    self?.isLoading = false
+                do {
+                    let blocksResponse = try decoder.decode(BlocksResponse.self, from: data)
+                    print("Successfully decoded \(blocksResponse.blocks.count) blocks")
+                    
+                    DispatchQueue.main.async { [weak self] in
+                        self?.pageBlocks = blocksResponse.blocks
+                        self?.isLoading = false
+                    }
+                } catch {
+                    print("Decoding error: \(error)")
+                    // Try to decode as direct array
+                    do {
+                        let blocks = try decoder.decode([NotionBlock].self, from: data)
+                        print("Successfully decoded \(blocks.count) blocks (direct array)")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.pageBlocks = blocks
+                            self?.isLoading = false
+                        }
+                    } catch {
+                        print("Failed to decode blocks: \(error)")
+                        throw error
+                    }
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
