@@ -965,6 +965,9 @@ public protocol NotionClientProtocol {
     /// Retrieve blocks for a specific page
     func getPageBlocks(token: String, pageId: String) async throws -> [NotionBlock]
     
+    /// Retrieve child blocks for a specific block
+    func getChildBlocks(token: String, blockId: String) async throws -> [NotionBlock]
+    
     /// Query a database with optional filter, sort, and pagination
     func queryDatabase(databaseId: String, token: String, query: NotionDatabaseQueryRequest?) async throws -> NotionPaginatedResponse<NotionDatabaseItem>
 }

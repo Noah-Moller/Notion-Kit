@@ -229,6 +229,22 @@ public class NotionVaporClient: @unchecked Sendable {
         return try await notionClient.getPageBlocks(token: token.accessToken, pageId: pageId)
     }
     
+    /// Get child blocks for a specific block
+    public func getChildBlocks(for userId: String, blockId: String) async throws -> [NotionBlock] {
+        // Get token for user
+        guard let token = try await tokenStorage.getToken(userId: userId) else {
+            throw Abort(.unauthorized, reason: "User not connected to Notion")
+        }
+        
+        // Check if token is expired
+        if token.isExpired {
+            throw Abort(.unauthorized, reason: "Notion token expired")
+        }
+        
+        // Fetch and return child blocks
+        return try await notionClient.getChildBlocks(token: token.accessToken, blockId: blockId)
+    }
+    
     /// Gets the client ID (for diagnostics)
     /// - Returns: The client ID
     public func getClientId() -> String {

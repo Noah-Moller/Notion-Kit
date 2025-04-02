@@ -47,6 +47,7 @@ public struct NotionController {
         // Register new routes
         routeGroup.get("notion", "auth", "url", use: authURL)
         routeGroup.get("notion", "pages", ":pageId", "blocks", use: getPageBlocks)
+        routeGroup.get("notion", "blocks", ":blockId", "children", use: getChildBlocks)
     }
     
     // MARK: - Handlers
@@ -372,6 +373,54 @@ public struct NotionController {
                 )
             } else {
                 req.logger.error("Error getting page blocks: \(error)")
+                
+                let errorResponse = ["error": error.localizedDescription]
+                return try await Response(
+                    status: .internalServerError,
+                    body: .init(data: JSONEncoder().encode(errorResponse))
+                )
+            }
+        }
+    }
+    
+    /// Handle request to get child blocks
+    public static func getChildBlocks(req: Request) async throws -> Response {
+        // Get the user ID from the authenticated user or from query parameters
+        let userId = getUserId(from: req) ?? req.query[String.self, at: "user_id"]
+        let blockId = req.parameters.get("blockId")!
+        
+        req.logger.info("Getting child blocks for block \(blockId) for user \(userId ?? "unknown")")
+        
+        if userId == nil {
+            return try await Response(
+                status: .badRequest,
+                body: .init(string: "Missing user_id parameter")
+            )
+        }
+        
+        do {
+            let blocks = try await req.application.notion.getChildBlocks(for: userId!, blockId: blockId)
+            
+            struct BlocksResponse: Content {
+                let count: Int
+                let blocks: [NotionBlock]
+            }
+            
+            let response = BlocksResponse(
+                count: blocks.count,
+                blocks: blocks
+            )
+            
+            return try await response.encodeResponse(for: req)
+        } catch {
+            if let abort = error as? Abort {
+                let errorResponse = ["error": abort.reason]
+                return try await Response(
+                    status: abort.status,
+                    body: .init(data: JSONEncoder().encode(errorResponse))
+                )
+            } else {
+                req.logger.error("Error getting child blocks: \(error)")
                 
                 let errorResponse = ["error": error.localizedDescription]
                 return try await Response(

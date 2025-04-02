@@ -589,6 +589,44 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         }
     }
     
+    /// Retrieve child blocks for a specific block
+    public func getChildBlocks(token: String, blockId: String) async throws -> [NotionBlock] {
+        let url = URL(string: "https://api.notion.com/v1/blocks/\(blockId)/children")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NotionClientError.invalidResponse
+        }
+        
+        if httpResponse.statusCode != 200 {
+            let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+            throw NotionClientError.httpError(statusCode: httpResponse.statusCode, message: errorResponse?.message ?? "Unknown error")
+        }
+        
+        let decoder = JSONDecoder()
+        
+        struct BlocksResponse: Decodable {
+            let results: [NotionBlock]
+            let has_more: Bool
+            let next_cursor: String?
+        }
+        
+        do {
+            let blocksResponse = try decoder.decode(BlocksResponse.self, from: data)
+            return blocksResponse.results
+        } catch {
+            print("Error decoding blocks: \(error)")
+            print("Response data: \(String(data: data, encoding: .utf8) ?? "Unable to convert data to string")")
+            throw NotionClientError.decodingError(error)
+        }
+    }
+    
     // Helper empty body struct for requests
     private struct EmptyBody: Encodable {}
 } 

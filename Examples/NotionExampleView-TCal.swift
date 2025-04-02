@@ -157,7 +157,21 @@ struct NotionBlockView: View {
             case "toggle":
                 if let toggle = block.toggle {
                     DisclosureGroup(isExpanded: $isExpanded) {
-                        EmptyView() // Children are handled by parent VStack
+                        if isLoading {
+                            ProgressView()
+                                .padding(.leading)
+                        } else if let error = error {
+                            Text("Error loading children: \(error.localizedDescription)")
+                                .foregroundColor(.red)
+                                .padding(.leading)
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(childBlocks, id: \.id) { childBlock in
+                                    NotionBlockView(block: childBlock, clientManager: clientManager)
+                                        .padding(.leading)
+                                }
+                            }
+                        }
                     } label: {
                         richText(toggle.rich_text)
                     }
