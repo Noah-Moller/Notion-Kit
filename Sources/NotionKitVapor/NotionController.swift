@@ -513,7 +513,7 @@ public struct NotionController {
                     ).results
                     
                     // Convert PropertyDefinition to NotionProperty
-                    let properties = try database.properties.mapValues { definition -> NotionProperty in
+                    _ = try database.properties.mapValues { definition -> NotionProperty in
                         let propertyData = try JSONEncoder().encode(definition)
                         return try JSONDecoder().decode(NotionProperty.self, from: propertyData)
                     }
@@ -521,10 +521,24 @@ public struct NotionController {
                     return DatabaseInfo(
                         id: database.id,
                         name: database.title?.first?.plainText ?? "",
-                        url: database.url,
-                        title: database.title ?? [],
-                        properties: properties,
-                        items: items
+                        url: database.url ?? "",
+                        title: (database.title ?? []).map { richText in
+                            let data = try! JSONEncoder().encode(richText)
+                            return try! JSONDecoder().decode(RichTextItem.self, from: data)
+                        },
+                        properties: try database.properties.mapValues { property in
+                            let data = try JSONEncoder().encode(property)
+                            return try JSONDecoder().decode(PropertyValue.self, from: data)
+                        },
+                        items: items.map { item in
+                            NotionPage(
+                                id: item.id,
+                                url: item.url,
+                                properties: Dictionary(uniqueKeysWithValues: item.properties.map { key, value in
+                                    (key, value.values.first ?? "")
+                                })
+                            )
+                        }
                     )
                 }
             }

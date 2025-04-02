@@ -36,7 +36,7 @@ public func configure(_ app: Application) throws {
     NotionController.registerRoutes(on: routesWithSessionAndAuth)
     
     // Example of how to access NotionData in your routes
-    routesWithSessionAndAuth.get("notion", "data") { req -> NotionUserData in
+    routesWithSessionAndAuth.get("notion", "data") { req async throws -> NotionUserData in
         guard let userId = req.auth.get(SimpleUser.self)?.id else {
             throw Abort(.unauthorized)
         }
@@ -62,4 +62,4 @@ public func configure(_ app: Application) throws {
     
     // Configure your routes (pass the app for route setup)
     try routes(app)
-}
+} 
