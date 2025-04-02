@@ -13,4 +13,4 @@ final class ClientLifecycle: LifecycleHandler {
         // Attempt to shut down the HTTP client gracefully
         try? httpClient.syncShutdown()
     }
-} 
+}

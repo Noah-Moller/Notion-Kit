@@ -8,12 +8,27 @@ import NotionKit
 // Shared HTTPClient for use across the application
 var sharedHTTPClient: HTTPClient?
 
+/// Manages the lifecycle of the shared HTTPClient
+fileprivate final class ClientLifecycle: LifecycleHandler {
+    private let httpClient: HTTPClient
+    
+    init(httpClient: HTTPClient) {
+        self.httpClient = httpClient
+    }
+    
+    func shutdown(_ application: Application) {
+        // Attempt to shut down the HTTP client gracefully
+        try? httpClient.syncShutdown()
+    }
+}
+
 public func configure(_ app: Application) throws {
     // Configure SQLite database
     app.databases.use(.sqlite(.file("notion.sqlite")), as: .sqlite)
     
     // Run migrations
-    app.migrations.add(CreateNotionTokens())
+    let migration = NotionKitVapor.CreateNotionTokens()
+    app.migrations.add(migration)
     try app.autoMigrate().wait()
     
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
@@ -36,7 +51,7 @@ public func configure(_ app: Application) throws {
     NotionController.registerRoutes(on: routesWithSessionAndAuth)
     
     // Example of how to access NotionData in your routes
-    routesWithSessionAndAuth.get("notion", "data") { req async throws -> NotionUserData in
+    routesWithSessionAndAuth.get("notion", "data") { req async throws -> NotionKitVapor.NotionUserData in
         guard let userId = req.auth.get(SimpleUser.self)?.id else {
             throw Abort(.unauthorized)
         }

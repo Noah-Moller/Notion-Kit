@@ -131,27 +131,4 @@ final class NotionTokenModel: Model {
         self.workspaceIcon = workspaceIcon
         self.expiresAt = expiresAt
     }
-}
-
-/// Migration for creating the notion_tokens table
-struct CreateNotionTokens: AsyncMigration {
-    func prepare(on database: Database) async throws {
-        try await database.schema("notion_tokens")
-            .id()
-            .field("user_id", .string, .required)
-            .field("access_token", .string, .required)
-            .field("bot_id", .string, .required)
-            .field("workspace_id", .string, .required)
-            .field("workspace_name", .string, .required)
-            .field("workspace_icon", .string)
-            .field("expires_at", .datetime)
-            .field("created_at", .datetime)
-            .field("updated_at", .datetime)
-            .unique(on: "user_id")
-            .create()
-    }
-    
-    func revert(on database: Database) async throws {
-        try await database.schema("notion_tokens").delete()
-    }
 } 
