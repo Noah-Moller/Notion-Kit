@@ -164,6 +164,19 @@ struct NotionBlockView: View {
                             Text("Error loading children: \(error.localizedDescription)")
                                 .foregroundColor(.red)
                                 .padding(.leading)
+                        } else if childBlocks.isEmpty && block.has_children {
+                            Text("Loading...")
+                                .foregroundColor(.secondary)
+                                .padding(.leading)
+                                .onAppear {
+                                    Task {
+                                        await loadChildBlocks()
+                                    }
+                                }
+                        } else if childBlocks.isEmpty {
+                            Text("No content")
+                                .foregroundColor(.secondary)
+                                .padding(.leading)
                         } else {
                             VStack(alignment: .leading, spacing: 8) {
                                 ForEach(childBlocks, id: \.id) { childBlock in
@@ -176,8 +189,10 @@ struct NotionBlockView: View {
                         richText(toggle.rich_text)
                     }
                     .onChange(of: isExpanded) { newValue in
-                        if newValue && childBlocks.isEmpty {
+                        print("Toggle expanded: \(newValue), has children: \(block.has_children), child blocks count: \(childBlocks.count)")
+                        if newValue && block.has_children && childBlocks.isEmpty {
                             Task {
+                                print("Loading child blocks for \(block.id)")
                                 await loadChildBlocks()
                             }
                         }
@@ -243,12 +258,63 @@ struct NotionBlockView: View {
                             .padding(.leading, 8)
                     }
                 }
+            case "table_of_contents":
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Table of Contents")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    if block.has_children {
+                        DisclosureGroup(isExpanded: $isExpanded) {
+                            if isLoading {
+                                ProgressView()
+                                    .padding(.leading)
+                            } else if let error = error {
+                                Text("Error loading contents: \(error.localizedDescription)")
+                                    .foregroundColor(.red)
+                                    .padding(.leading)
+                            } else {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(childBlocks, id: \.id) { childBlock in
+                                        NotionBlockView(block: childBlock, clientManager: clientManager)
+                                            .padding(.leading)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text("View Contents")
+                                .foregroundColor(.blue)
+                        }
+                        .onChange(of: isExpanded) { newValue in
+                            if newValue && childBlocks.isEmpty {
+                                Task {
+                                    await loadChildBlocks()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+
+            case "unsupported":
+                Text("This content type is not yet supported")
+                    .foregroundColor(.secondary)
+                    .italic()
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+
             default:
                 Text("Unsupported block type: \(block.type)")
                     .foregroundColor(.secondary)
+                    .italic()
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
             }
         }
-        .if(block.has_children && !["toggle"].contains(block.type)) { view in
+        .if(block.has_children && !["toggle", "table_of_contents"].contains(block.type)) { view in
             view.onTapGesture {
                 isExpanded.toggle()
                 if isExpanded && childBlocks.isEmpty {
@@ -323,11 +389,15 @@ struct NotionBlockView: View {
         error = nil
         
         do {
+            print("Starting to load child blocks for block \(block.id)")
             childBlocks = try await clientManager.fetchChildBlocks(blockId: block.id)
+            print("Successfully loaded \(childBlocks.count) child blocks")
             isLoading = false
         } catch {
             self.error = error
             isLoading = false
+            print("Error loading child blocks for \(block.id): \(error)")
+            print("Error details: \(String(describing: error))")
         }
     }
 }

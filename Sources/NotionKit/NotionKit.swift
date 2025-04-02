@@ -782,6 +782,8 @@ public struct NotionBlock: Codable, Identifiable, Sendable {
     public var divider: EmptyBlock?
     public var callout: CalloutBlock?
     public var quote: QuoteBlock?
+    public var table_of_contents: TableOfContentsBlock?
+    public var unsupported: EmptyBlock?
     
     public var content: String {
         switch type {
@@ -807,6 +809,10 @@ public struct NotionBlock: Codable, Identifiable, Sendable {
             return callout?.richText ?? ""
         case "quote":
             return quote?.richText ?? ""
+        case "table_of_contents":
+            return "Table of Contents"
+        case "unsupported":
+            return "Unsupported block type"
         default:
             return ""
         }
@@ -943,6 +949,10 @@ public struct Annotations: Codable, Sendable {
     public var strikethrough: Bool
     public var underline: Bool
     public var code: Bool
+    public var color: String
+}
+
+public struct TableOfContentsBlock: Codable, Sendable {
     public var color: String
 }
 
