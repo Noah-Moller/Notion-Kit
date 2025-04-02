@@ -832,6 +832,54 @@ public class NotionClientManager: ObservableObject {
             throw error
         }
     }
+    
+    /// Fetch blocks for a specific block (used for nested blocks)
+    public func fetchChildBlocks(blockId: String) async throws -> [NotionBlock] {
+        guard isAuthenticated else {
+            throw NSError(
+                domain: "com.notionkit.client",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Not authenticated with Notion"]
+            )
+        }
+        
+        let blocksUrl = apiServerURL.appendingPathComponent("notion/blocks/\(blockId)/children")
+        var components = URLComponents(url: blocksUrl, resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        
+        guard let url = components.url else {
+            throw NSError(
+                domain: "com.notionkit.client",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to construct URL"]
+            )
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(
+                domain: "com.notionkit.client",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid response"]
+            )
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(
+                domain: "com.notionkit.client",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP Error \(httpResponse.statusCode): \(errorMessage)"]
+            )
+        }
+        
+        let decoder = JSONDecoder()
+        return try decoder.decode([NotionBlock].self, from: data)
+    }
 }
 
 // MARK: - Token Storage
