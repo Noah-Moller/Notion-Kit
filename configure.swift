@@ -1,23 +1,37 @@
 import Vapor
 import NotionKitVapor
 import AsyncHTTPClient
+import Fluent
+import FluentSQLiteDriver
 
 // Shared HTTPClient for use across the application
 var sharedHTTPClient: HTTPClient?
 
 public func configure(_ app: Application) throws {
+    // Configure SQLite database
+    app.databases.use(.sqlite(.file("notion.sqlite")), as: .sqlite)
+    
+    // Run migrations
+    app.migrations.add(CreateNotionTokens())
+    try app.autoMigrate().wait()
+    
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
     
     // Set up sessions (required for OAuth flow)
     app.middleware.use(app.sessions.middleware)
     
-    // Configure Notion client
-    NotionVaporClient.configure(
-        app: app,
+    // Create SQLite token storage
+    let tokenStorage = SQLiteNotionTokenStorage(app: app)
+    
+    // Create and store the client
+    let client = NotionVaporClient(
         clientId: Environment.get("NOTION_CLIENT_ID")!,
         clientSecret: Environment.get("NOTION_CLIENT_SECRET")!,
-        redirectUri: Environment.get("NOTION_REDIRECT_URI")!
+        redirectUri: Environment.get("NOTION_REDIRECT_URI")!,
+        tokenStorage: tokenStorage
     )
+    
+    app.notion = client
     
     // Register routes with UserIDMiddleware to handle client requests
     // Make sure we also include the sessions middleware in the route group

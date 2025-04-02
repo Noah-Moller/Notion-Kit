@@ -169,7 +169,7 @@ struct NotionBlockView: View {
                                 .foregroundColor(.secondary)
                                 .padding(.leading)
                                 .onAppear {
-                                    Task {
+                                    _Concurrency.Task {
                                         await loadChildBlocks()
                                     }
                                 }
@@ -191,7 +191,7 @@ struct NotionBlockView: View {
                     .onChange(of: isExpanded) { newValue in
                         print("Toggle expanded: \(newValue), has children: \(block.has_children), child blocks count: \(childBlocks.count)")
                         if newValue && block.has_children && childBlocks.isEmpty {
-                            Task {
+                            _Concurrency.Task {
                                 print("Loading child blocks for \(block.id)")
                                 await loadChildBlocks()
                             }
@@ -286,7 +286,7 @@ struct NotionBlockView: View {
                         }
                         .onChange(of: isExpanded) { newValue in
                             if newValue && childBlocks.isEmpty {
-                                Task {
+                                _Concurrency.Task {
                                     await loadChildBlocks()
                                 }
                             }
@@ -298,15 +298,55 @@ struct NotionBlockView: View {
                 .cornerRadius(8)
 
             case "unsupported":
-                Text("This content type is not yet supported")
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Unsupported block type: \(block.unsupported?.originalType ?? block.type)")
+                        .foregroundColor(.secondary)
+                        .italic()
+                    if block.has_children {
+                        DisclosureGroup(isExpanded: $isExpanded) {
+                            if isLoading {
+                                ProgressView()
+                                    .padding(.leading)
+                            } else if let error = error {
+                                Text("Error loading children: \(error.localizedDescription)")
+                                    .foregroundColor(.red)
+                                    .padding(.leading)
+                            } else if childBlocks.isEmpty {
+                                Text("Loading...")
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading)
+                                    .onAppear {
+                                        Task {
+                                            await loadChildBlocks()
+                                        }
+                                    }
+                            } else {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(childBlocks, id: \.id) { childBlock in
+                                        NotionBlockView(block: childBlock, clientManager: clientManager)
+                                            .padding(.leading)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text("View Content")
+                                .foregroundColor(.blue)
+                        }
+                        .onChange(of: isExpanded) { newValue in
+                            if newValue && childBlocks.isEmpty {
+                                Task {
+                                    await loadChildBlocks()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
 
             default:
-                Text("Unsupported block type: \(block.type)")
+                Text("Unknown block type: \(block.type)")
                     .foregroundColor(.secondary)
                     .italic()
                     .padding(8)
@@ -314,8 +354,12 @@ struct NotionBlockView: View {
                     .cornerRadius(8)
             }
         }
-        .if(block.has_children && !["toggle", "table_of_contents"].contains(block.type)) { view in
+        .if(block.has_children && !["toggle", "table_of_contents", "image", "unsupported"].contains(block.type)) { view in
             view.onTapGesture {
+                print("Block type: \(block.type), has_children: \(block.has_children)")
+                if let unsupported = block.unsupported {
+                    print("Unsupported block details - type: \(unsupported.originalType ?? "unknown"), raw data: \(unsupported.rawData ?? [:])")
+                }
                 isExpanded.toggle()
                 if isExpanded && childBlocks.isEmpty {
                     Task {
@@ -389,14 +433,15 @@ struct NotionBlockView: View {
         error = nil
         
         do {
-            print("Starting to load child blocks for block \(block.id)")
+            print("Starting to load child blocks for block \(block.id) of type \(block.type)")
             childBlocks = try await clientManager.fetchChildBlocks(blockId: block.id)
-            print("Successfully loaded \(childBlocks.count) child blocks")
+            print("Successfully loaded \(childBlocks.count) child blocks for block type \(block.type)")
+            print("Child block types: \(childBlocks.map { $0.type }.joined(separator: ", "))")
             isLoading = false
         } catch {
             self.error = error
             isLoading = false
-            print("Error loading child blocks for \(block.id): \(error)")
+            print("Error loading child blocks for \(block.id) of type \(block.type): \(error)")
             print("Error details: \(String(describing: error))")
         }
     }

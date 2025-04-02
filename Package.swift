@@ -25,6 +25,7 @@ let package = Package(
         // Dependencies for server-side (Vapor)
         .package(url: "https://github.com/vapor/vapor.git", from: "4.0.0"),
         .package(url: "https://github.com/vapor/fluent.git", from: "4.0.0"),
+        .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.0.0"),
         
         // Dependencies for both client and server
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.0.0"),
@@ -42,6 +43,7 @@ let package = Package(
                 "NotionKit",
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "Fluent", package: "fluent"),
+                .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
             ]),
         
         // Client-side (SwiftUI) target
