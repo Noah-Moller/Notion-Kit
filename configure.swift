@@ -20,24 +20,32 @@ public func configure(_ app: Application) throws {
     // Set up sessions (required for OAuth flow)
     app.middleware.use(app.sessions.middleware)
     
-    // Create SQLite token storage
-    let tokenStorage = SQLiteNotionTokenStorage(app: app)
-    
-    // Create and store the client
-    let client = NotionVaporClient(
+    // Configure Notion client
+    NotionVaporClient.configure(
+        app: app,
         clientId: Environment.get("NOTION_CLIENT_ID")!,
         clientSecret: Environment.get("NOTION_CLIENT_SECRET")!,
-        redirectUri: Environment.get("NOTION_REDIRECT_URI")!,
-        tokenStorage: tokenStorage
+        redirectUri: Environment.get("NOTION_REDIRECT_URI")!
     )
     
-    app.notion = client
-    
     // Register routes with UserIDMiddleware to handle client requests
-    // Make sure we also include the sessions middleware in the route group
     let userIDMiddleware = UserIDMiddleware()
+    // Create a route group with both sessions middleware and user ID middleware
     let routesWithSessionAndAuth = app.grouped([app.sessions.middleware, userIDMiddleware])
     NotionController.registerRoutes(on: routesWithSessionAndAuth)
+    
+    // Example of how to access NotionData in your routes
+    routesWithSessionAndAuth.get("notion", "data") { req -> NotionUserData in
+        guard let userId = req.auth.get(SimpleUser.self)?.id else {
+            throw Abort(.unauthorized)
+        }
+        
+        guard let notionData = req.application.notionData.getData(for: userId) else {
+            throw Abort(.notFound, reason: "Notion data not found. Please authenticate first.")
+        }
+        
+        return notionData
+    }
     
     app.routes.defaultMaxBodySize = "10mb"
     // Create a shared HTTPClient with a shared event loop group

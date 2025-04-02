@@ -82,7 +82,10 @@ public struct NotionController {
         }
         
         // Handle callback and exchange code for token
-        _ = try await req.application.notion.handleCallback(request: req, userId: userId)
+        let token = try await req.application.notion.handleCallback(request: req, userId: userId)
+        
+        // Populate NotionData
+        try await populateNotionData(req: req, userId: userId, token: token)
         
         // Determine redirect URL
         let redirectURL: String
@@ -207,9 +210,10 @@ public struct NotionController {
         
         // Return the URL as JSON
         let response = ["url": oauthURL.absoluteString, "state": state]
-        return try await Response(
+        let data = try JSONEncoder().encode(response)
+        return Response(
             status: .ok,
-            body: .init(data: JSONEncoder().encode(response))
+            body: .init(data: data)
         )
     }
     
@@ -344,7 +348,7 @@ public struct NotionController {
         req.logger.info("Getting blocks for page \(pageId) for user \(userId ?? "unknown")")
         
         if userId == nil {
-            return try await Response(
+            return Response(
                 status: .badRequest,
                 body: .init(string: "Missing user_id parameter")
             )
@@ -367,17 +371,19 @@ public struct NotionController {
         } catch {
             if let abort = error as? Abort {
                 let errorResponse = ["error": abort.reason]
-                return try await Response(
+                let data = try JSONEncoder().encode(errorResponse)
+                return Response(
                     status: abort.status,
-                    body: .init(data: JSONEncoder().encode(errorResponse))
+                    body: .init(data: data)
                 )
             } else {
                 req.logger.error("Error getting page blocks: \(error)")
                 
                 let errorResponse = ["error": error.localizedDescription]
-                return try await Response(
+                let data = try JSONEncoder().encode(errorResponse)
+                return Response(
                     status: .internalServerError,
-                    body: .init(data: JSONEncoder().encode(errorResponse))
+                    body: .init(data: data)
                 )
             }
         }
@@ -392,7 +398,7 @@ public struct NotionController {
         req.logger.info("Getting child blocks for block \(blockId) for user \(userId ?? "unknown")")
         
         if userId == nil {
-            return try await Response(
+            return Response(
                 status: .badRequest,
                 body: .init(string: "Missing user_id parameter")
             )
@@ -415,17 +421,19 @@ public struct NotionController {
         } catch {
             if let abort = error as? Abort {
                 let errorResponse = ["error": abort.reason]
-                return try await Response(
+                let data = try JSONEncoder().encode(errorResponse)
+                return Response(
                     status: abort.status,
-                    body: .init(data: JSONEncoder().encode(errorResponse))
+                    body: .init(data: data)
                 )
             } else {
                 req.logger.error("Error getting child blocks: \(error)")
                 
                 let errorResponse = ["error": error.localizedDescription]
-                return try await Response(
+                let data = try JSONEncoder().encode(errorResponse)
+                return Response(
                     status: .internalServerError,
-                    body: .init(data: JSONEncoder().encode(errorResponse))
+                    body: .init(data: data)
                 )
             }
         }
@@ -460,6 +468,130 @@ public struct NotionController {
         )
         
         return try await response.encodeResponse(for: req)
+    }
+    
+    // MARK: - NotionData Population
+    
+    /// Populate NotionData for a user
+    /// - Parameters:
+    ///   - req: The request
+    ///   - userId: The ID of the user
+    ///   - token: The Notion token
+    private static func populateNotionData(req: Request, userId: String, token: NotionToken) async throws {
+        // Create workspace info
+        let workspace = WorkspaceInfo(
+            id: token.workspaceId,
+            name: token.workspaceName,
+            icon: token.workspaceIcon
+        )
+        
+        // Create token info
+        let tokenInfo = TokenInfo(
+            accessToken: token.accessToken,
+            botId: token.botId,
+            workspaceId: token.workspaceId,
+            workspaceName: token.workspaceName,
+            workspaceIcon: token.workspaceIcon,
+            expiresAt: token.expiresAt
+        )
+        
+        // Create user info
+        let user = UserInfo(
+            id: userId,
+            token: tokenInfo,
+            workspace: workspace
+        )
+        
+        // Fetch databases
+        let databases = try await req.application.notion.listDatabases(for: userId)
+        let databaseInfos = try await withThrowingTaskGroup(of: DatabaseInfo.self) { group in
+            for database in databases {
+                group.addTask {
+                    let items = try await req.application.notion.queryDatabase(
+                        databaseId: database.id,
+                        for: userId
+                    ).results
+                    
+                    // Convert PropertyDefinition to NotionProperty
+                    let properties = try database.properties.mapValues { definition -> NotionProperty in
+                        let propertyData = try JSONEncoder().encode(definition)
+                        return try JSONDecoder().decode(NotionProperty.self, from: propertyData)
+                    }
+                    
+                    return DatabaseInfo(
+                        id: database.id,
+                        name: database.title?.first?.plainText ?? "",
+                        url: database.url,
+                        title: database.title ?? [],
+                        properties: properties,
+                        items: items
+                    )
+                }
+            }
+            
+            var results: [DatabaseInfo] = []
+            for try await info in group {
+                results.append(info)
+            }
+            return results
+        }
+        
+        // Fetch pages
+        let pages = try await req.application.notion.listPages(for: userId)
+        let pageInfos = try await withThrowingTaskGroup(of: PageInfo.self) { group in
+            for page in pages {
+                group.addTask {
+                    let blocks = try await req.application.notion.getPageBlocks(for: userId, pageId: page.id)
+                    
+                    // Extract title from page properties
+                    let titleProperty = page.properties["Name"] ?? page.properties["Title"] ?? page.properties["title"]
+                    let title = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(titleProperty)) as? [String: Any]
+                    let titleArray = title?["title"] as? [[String: Any]]
+                    let plainText = titleArray?.first?["plain_text"] as? String ?? ""
+                    
+                    // Convert page properties to PropertyValue dictionary
+                    let properties = try page.properties.mapValues { value -> PropertyValue in
+                        let propertyData = try JSONEncoder().encode(value)
+                        return try JSONDecoder().decode(PropertyValue.self, from: propertyData)
+                    }
+                    
+                    return PageInfo(
+                        id: page.id,
+                        url: page.url,
+                        title: plainText,
+                        icon: nil, // NotionPage doesn't have icon
+                        cover: nil, // NotionPage doesn't have cover
+                        properties: properties,
+                        blocks: blocks,
+                        lastEditedTime: Date(), // NotionPage doesn't have lastEditedTime
+                        createdTime: Date() // NotionPage doesn't have createdTime
+                    )
+                }
+            }
+            
+            var results: [PageInfo] = []
+            for try await info in group {
+                results.append(info)
+            }
+            return results
+        }
+        
+        // Create metadata
+        let metadata = Metadata(
+            syncedAt: Date(),
+            version: "1.0",
+            lastSyncStatus: .success
+        )
+        
+        // Create and store NotionUserData
+        let notionData = NotionUserData(
+            user: user,
+            databases: databaseInfos,
+            pages: pageInfos,
+            metadata: metadata
+        )
+        
+        req.application.notionData.store(notionData, for: userId)
     }
     
     // MARK: - Helper Methods

@@ -20,26 +20,30 @@ public final class SQLiteNotionTokenStorage: NotionTokenStorage, @unchecked Send
         if let existingToken = try await NotionTokenModel.query(on: app.db)
             .filter(\.$userId == userId)
             .first() {
-            // Update existing token
-            existingToken.accessToken = token.accessToken
-            existingToken.botId = token.botId
-            existingToken.workspaceId = token.workspaceId
-            existingToken.workspaceName = token.workspaceName
-            existingToken.workspaceIcon = token.workspaceIcon
-            existingToken.expiresAt = token.expiresAt
-            try await existingToken.save(on: app.db)
+            // Update existing token using a transaction
+            try await app.db.transaction { database in
+                existingToken.accessToken = token.accessToken
+                existingToken.botId = token.botId
+                existingToken.workspaceId = token.workspaceId
+                existingToken.workspaceName = token.workspaceName
+                existingToken.workspaceIcon = token.workspaceIcon
+                existingToken.expiresAt = token.expiresAt
+                try await existingToken.save(on: database)
+            }
         } else {
-            // Create new token
-            let tokenModel = NotionTokenModel(
-                userId: userId,
-                accessToken: token.accessToken,
-                botId: token.botId,
-                workspaceId: token.workspaceId,
-                workspaceName: token.workspaceName,
-                workspaceIcon: token.workspaceIcon,
-                expiresAt: token.expiresAt
-            )
-            try await tokenModel.save(on: app.db)
+            // Create new token using a transaction
+            try await app.db.transaction { database in
+                let tokenModel = NotionTokenModel(
+                    userId: userId,
+                    accessToken: token.accessToken,
+                    botId: token.botId,
+                    workspaceId: token.workspaceId,
+                    workspaceName: token.workspaceName,
+                    workspaceIcon: token.workspaceIcon,
+                    expiresAt: token.expiresAt
+                )
+                try await tokenModel.save(on: database)
+            }
         }
     }
     
@@ -76,7 +80,7 @@ public final class SQLiteNotionTokenStorage: NotionTokenStorage, @unchecked Send
 final class NotionTokenModel: Model {
     static let schema = "notion_tokens"
     
-    @ID(key: .id)
+    @ID(custom: .id)
     var id: UUID?
     
     @Field(key: "user_id")
@@ -132,7 +136,7 @@ final class NotionTokenModel: Model {
 /// Migration for creating the notion_tokens table
 struct CreateNotionTokens: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.schema(NotionTokenModel.schema)
+        try await database.schema("notion_tokens")
             .id()
             .field("user_id", .string, .required)
             .field("access_token", .string, .required)
@@ -148,6 +152,6 @@ struct CreateNotionTokens: AsyncMigration {
     }
     
     func revert(on database: Database) async throws {
-        try await database.schema(NotionTokenModel.schema).delete()
+        try await database.schema("notion_tokens").delete()
     }
 } 
