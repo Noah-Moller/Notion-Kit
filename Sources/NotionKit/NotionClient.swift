@@ -90,25 +90,23 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
     ///   - userId: Optional user ID to associate with the connection
     /// - Returns: The OAuth URL
     public func getOAuthURL(redirectURI: String, state: String?, userId: String?) -> URL {
-        var params = [
-            "client_id": clientId,
-            "redirect_uri": redirectURI,
-            "response_type": "code",
-            "owner": "user"
+        // Build parameters in the correct order according to Notion's documentation
+        var components = URLComponents(string: "https://api.notion.com/v1/oauth/authorize")!
+        
+        var queryItems = [
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "owner", value: "user")
         ]
         
+        // Optional state parameter for CSRF protection
         if let state = state {
-            params["state"] = state
+            queryItems.append(URLQueryItem(name: "state", value: state))
         }
         
-        if let userId = userId {
-            params["user_id"] = userId
-        }
-        
-        let queryString = params.map { "\($0.key)=\($0.value.urlEncoded())" }.joined(separator: "&")
-        let urlString = "https://notion.so/oauth/authorize?\(queryString)"
-        
-        return URL(string: urlString)!
+        components.queryItems = queryItems
+        return components.url!
     }
     
     /// Exchange an authorization code for an access token
