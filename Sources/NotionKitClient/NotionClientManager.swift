@@ -44,7 +44,7 @@ public class NotionClientManager: ObservableObject {
     private let notionClient: NotionClientProtocol
     
     /// The API server URL for token exchange and API calls
-    private let apiServerURL: URL
+    let apiServerURL: URL
     
     /// The Notion OAuth client ID
     private let clientId: String
