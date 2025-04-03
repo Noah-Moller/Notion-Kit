@@ -1,4 +1,5 @@
 import Vapor
+import NotionKit
 
 extension Application {
     private struct NotionDataKey: StorageKey {
@@ -22,21 +23,21 @@ extension Application {
 
 /// Storage for Notion data
 public final class NotionDataStorage {
-    private var storage: [String: NotionUserData] = [:]
+    private var storage: [String: NotionKitVapor.NotionUserData] = [:]
     private let lock = NSLock()
     
     public init() {}
     
-    public func store(_ data: NotionUserData, for userId: String) {
+    public func store(_ data: NotionKitVapor.NotionUserData, for userId: String) {
         lock.lock()
         defer { lock.unlock() }
         storage[userId] = data
     }
     
-    public func getData(for userId: String) -> NotionUserData? {
+    public func getData(for userId: String) -> NotionKit.NotionUserData? {
         lock.lock()
         defer { lock.unlock() }
-        return storage[userId]
+        return storage[userId]?.toNotionKit()
     }
     
     public func removeData(for userId: String) {
