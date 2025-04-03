@@ -34,7 +34,7 @@ public final class NotionDataStorage {
         storage[userId] = data
     }
     
-    public func getData(for userId: String) -> NotionKit.NotionUserData? {
+    public func getData(for userId: String) -> NotionUserData? {
         lock.lock()
         defer { lock.unlock() }
         return storage[userId]?.toNotionKit()
