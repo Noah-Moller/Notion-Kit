@@ -31,7 +31,7 @@ public struct NotionConnectButton: View {
             #endif
         } label: {
             HStack(spacing: 8) {
-                Image("NotionLogo", bundle: .module)
+                Image("NotionLogo", bundle: Bundle.module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 24, height: 24)

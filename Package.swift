@@ -54,7 +54,7 @@ let package = Package(
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
             ],
             resources: [
-                .process("Resources")
+                .process("Resources/Assets.xcassets")
             ]
         ),
         
