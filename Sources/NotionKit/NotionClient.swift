@@ -106,7 +106,7 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         }
         
         let queryString = params.map { "\($0.key)=\($0.value.urlEncoded())" }.joined(separator: "&")
-        let urlString = "https://api.notion.com/v1/oauth/authorize?\(queryString)"
+        let urlString = "https://notion.so/oauth/authorize?\(queryString)"
         
         return URL(string: urlString)!
     }
