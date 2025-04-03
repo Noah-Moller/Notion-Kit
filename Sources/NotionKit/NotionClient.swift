@@ -90,12 +90,15 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
     ///   - userId: Optional user ID to associate with the connection
     /// - Returns: The OAuth URL
     public func getOAuthURL(redirectURI: String, state: String?, userId: String?) -> URL {
-        // Build parameters in the correct order according to Notion's documentation
+        // Build parameters in the exact order specified by Notion's documentation
         var components = URLComponents(string: "https://api.notion.com/v1/oauth/authorize")!
+        
+        // URL encode the redirect URI properly
+        let encodedRedirectURI = redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI
         
         var queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "redirect_uri", value: encodedRedirectURI),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "owner", value: "user")
         ]
@@ -106,7 +109,13 @@ public class NotionClient: NotionClientProtocol, @unchecked Sendable {
         }
         
         components.queryItems = queryItems
-        return components.url!
+        
+        // Ensure proper URL encoding
+        guard let url = components.url else {
+            fatalError("Failed to construct OAuth URL")
+        }
+        
+        return url
     }
     
     /// Exchange an authorization code for an access token
