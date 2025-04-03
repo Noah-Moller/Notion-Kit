@@ -56,23 +56,36 @@ public struct NotionController {
     /// - Parameter req: The request
     /// - Returns: A redirect response
     public static func authorize(req: Request) throws -> Response {
+        // Debug logging
+        req.logger.info("=== NotionKit Debug: Authorize ===")
+        req.logger.info("Headers: \(req.headers.description)")
+        req.logger.info("Query Parameters: \(req.url.query ?? "none")")
+        
         // Generate state for CSRF protection
         let state = UUID().uuidString
         req.session.data["notion_state"] = state
+        req.logger.info("Generated state: \(state)")
         
-        // Debug logging
-        req.logger.debug("=== NotionKit Debug: Authorize ===")
-        req.logger.debug("Generated state: \(state)")
+        // Debug session
+        req.logger.info("Session ID: \(req.session.id)")
+        req.logger.info("Session Data: \(req.session.data)")
         
         // Get OAuth URL
         let oauthURL = req.application.notion.getOAuthURL(state: state)
-        req.logger.debug("OAuth URL: \(oauthURL.absoluteString)")
+        req.logger.info("OAuth URL: \(oauthURL.absoluteString)")
         
         // Debug: Check client configuration
-        req.logger.debug("Client configuration:")
-        req.logger.debug("Redirect URI: \(req.application.notion.getRedirectUri())")
+        req.logger.info("=== Client Configuration ===")
+        req.logger.info("Redirect URI: \(req.application.notion.getRedirectUri())")
+        req.logger.info("Client ID: \(req.application.notion.getClientId())")
+        
+        // Debug environment variables
+        req.logger.info("=== Environment Variables ===")
+        req.logger.info("NOTION_CLIENT_ID: \(Environment.get("NOTION_CLIENT_ID") ?? "not set")")
+        req.logger.info("NOTION_REDIRECT_URI: \(Environment.get("NOTION_REDIRECT_URI") ?? "not set")")
         
         // Redirect to OAuth URL
+        req.logger.info("Redirecting to Notion OAuth...")
         return req.redirect(to: oauthURL.absoluteString)
     }
     
@@ -80,31 +93,74 @@ public struct NotionController {
     /// - Parameter req: The request
     /// - Returns: A response
     public static func callback(req: Request) async throws -> Response {
+        // Debug logging
+        req.logger.info("=== NotionKit Debug: Callback ===")
+        req.logger.info("Headers: \(req.headers.description)")
+        req.logger.info("Query Parameters: \(req.url.query ?? "none")")
+        req.logger.info("Session ID: \(req.session.id)")
+        req.logger.info("Session Data: \(req.session.data)")
+        
         // Get user ID from authenticated user or request
         let userId: String
         if let authenticatedUser = req.auth.get(SimpleUser.self) {
             userId = authenticatedUser.id
+            req.logger.info("Using authenticated user ID: \(userId)")
         } else if let userIdParam = req.query[String.self, at: "user_id"] {
             userId = userIdParam
+            req.logger.info("Using user ID from query parameter: \(userId)")
         } else {
+            req.logger.error("No user ID provided")
             throw Abort(.badRequest, reason: "User ID not provided")
         }
         
+        // Extract code from query parameters
+        guard let code = req.query[String.self, at: "code"] else {
+            req.logger.error("Missing code parameter")
+            throw Abort(.badRequest, reason: "Missing code parameter")
+        }
+        req.logger.info("Received authorization code")
+        
+        // Try to verify state if provided and session is available
+        do {
+            if let expectedState = req.session.data["notion_state"],
+               let receivedState = req.query[String.self, at: "state"] {
+                req.logger.info("Verifying state parameter")
+                req.logger.info("Expected state: \(expectedState)")
+                req.logger.info("Received state: \(receivedState)")
+                if expectedState != receivedState {
+                    req.logger.error("State parameter mismatch")
+                    throw Abort(.badRequest, reason: "Invalid state parameter")
+                }
+                req.logger.info("State verification successful")
+            } else {
+                req.logger.warning("No state parameter to verify")
+            }
+        } catch {
+            req.logger.warning("Could not access session data for state verification: \(error)")
+        }
+        
         // Handle callback and exchange code for token
+        req.logger.info("Exchanging code for token...")
         let token = try await req.application.notion.handleCallback(request: req, userId: userId)
+        req.logger.info("Token exchange successful")
         
         // Populate NotionData
+        req.logger.info("Populating Notion data...")
         try await populateNotionData(req: req, userId: userId, token: token)
+        req.logger.info("Notion data populated successfully")
         
         // Determine redirect URL
         let redirectURL: String
         if let successURL = req.query[String.self, at: "success_url"] {
             redirectURL = successURL
+            req.logger.info("Using success URL from query: \(redirectURL)")
         } else {
             redirectURL = "/notion/success"
+            req.logger.info("Using default success URL: \(redirectURL)")
         }
         
         // Redirect to success URL
+        req.logger.info("Redirecting to success URL: \(redirectURL)")
         return req.redirect(to: redirectURL)
     }
     
