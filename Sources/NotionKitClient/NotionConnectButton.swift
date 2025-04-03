@@ -2,16 +2,16 @@ import SwiftUI
 import NotionKit
 
 public struct NotionConnectButton: View {
-    @ObservedObject var appModel: AppModel
+    let clientManager: NotionClientManager
     
-    public init(appModel: AppModel) {
-        self.appModel = appModel
+    public init(clientManager: NotionClientManager) {
+        self.clientManager = clientManager
     }
     
     public var body: some View {
         Button {
-            let baseURL = appModel.notionClient.apiServerURL.absoluteString
-            guard let url = URL(string: "\(baseURL)/notion/authorize?user_id=\(appModel.notionClient.userId)") else { return }
+            let baseURL = clientManager.apiServerURL.absoluteString
+            guard let url = URL(string: "\(baseURL)/notion/authorize?user_id=\(clientManager.userId)") else { return }
             #if os(macOS)
             NSWorkspace.shared.open(url)
             #else
