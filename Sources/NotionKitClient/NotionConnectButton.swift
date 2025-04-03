@@ -3,15 +3,27 @@ import NotionKit
 
 public struct NotionConnectButton: View {
     let clientManager: NotionClientManager
+    let onCompletion: () -> Void
     
-    public init(clientManager: NotionClientManager) {
+    public init(clientManager: NotionClientManager, onCompletion: @escaping () -> Void) {
         self.clientManager = clientManager
+        self.onCompletion = onCompletion
     }
     
     public var body: some View {
         Button {
             let baseURL = clientManager.apiServerURL.absoluteString
             guard let url = URL(string: "\(baseURL)/notion/authorize?user_id=\(clientManager.userId)") else { return }
+            
+            // Register for auth completion notification
+            NotificationCenter.default.addObserver(
+                forName: .notionAuthCompleted,
+                object: nil,
+                queue: .main
+            ) { _ in
+                onCompletion()
+            }
+            
             #if os(macOS)
             NSWorkspace.shared.open(url)
             #else
@@ -38,4 +50,9 @@ public struct NotionConnectButton: View {
             .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 2)
         }
     }
+}
+
+// MARK: - Notification Name
+public extension Notification.Name {
+    static let notionAuthCompleted = Notification.Name("notionAuthCompleted")
 } 
