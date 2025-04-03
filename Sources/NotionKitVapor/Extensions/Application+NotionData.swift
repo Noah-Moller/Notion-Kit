@@ -34,10 +34,10 @@ public final class NotionDataStorage {
         storage[userId] = data
     }
     
-    public func getData(for userId: String) -> NotionUserData? {
+    public func getData(for userId: String) -> NotionKitVapor.NotionUserData? {
         lock.lock()
         defer { lock.unlock() }
-        return storage[userId]?.toNotionKit()
+        return storage[userId]
     }
     
     public func removeData(for userId: String) {

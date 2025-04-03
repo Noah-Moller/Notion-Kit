@@ -6,8 +6,47 @@ extension NotionKitVapor.NotionUserData {
     public func toNotionKit() -> NotionUserData {
         return NotionUserData(
             user: user.toNotionKit(),
-            databases: databases.map { DatabaseInfo(from: $0.toNotionKit()) },
-            pages: pages.map { PageInfo(from: $0.toNotionKit()) },
+            databases: databases.map { db -> DatabaseInfo in
+                DatabaseInfo(
+                    id: db.id,
+                    name: db.name,
+                    url: db.url,
+                    title: db.title.map { richText in
+                        RichTextItem(
+                            type: richText.type,
+                            text: TextContent(
+                                content: richText.text?.content ?? "",
+                                link: richText.text?.link.map { Link(url: $0.url) }
+                            ),
+                            annotations: Annotations(
+                                bold: richText.annotations?.bold ?? false,
+                                italic: richText.annotations?.italic ?? false,
+                                strikethrough: richText.annotations?.strikethrough ?? false,
+                                underline: richText.annotations?.underline ?? false,
+                                code: richText.annotations?.code ?? false,
+                                color: richText.annotations?.color ?? "default"
+                            ),
+                            plain_text: richText.plain_text,
+                            href: richText.href
+                        )
+                    },
+                    properties: db.properties,
+                    items: db.items
+                )
+            },
+            pages: pages.map { page -> PageInfo in
+                PageInfo(
+                    id: page.id,
+                    url: page.url,
+                    title: page.title,
+                    icon: page.icon,
+                    cover: page.cover,
+                    properties: page.properties,
+                    blocks: page.blocks,
+                    lastEditedTime: page.lastEditedTime,
+                    createdTime: page.createdTime
+                )
+            },
             metadata: metadata.toNotionKit()
         )
     }
@@ -50,8 +89,27 @@ extension NotionKitVapor.DatabaseInfo {
     public func toNotionKit() -> NotionDatabase {
         return NotionDatabase(
             id: id,
-            name: name,
-            properties: convertToProperties(properties)
+            title: title.map { richText in
+                NotionRichText(
+                    plainText: richText.plain_text,
+                    href: richText.href,
+                    annotations: NotionAnnotations(
+                        bold: richText.annotations?.bold ?? false,
+                        italic: richText.annotations?.italic ?? false,
+                        strikethrough: richText.annotations?.strikethrough ?? false,
+                        underline: richText.annotations?.underline ?? false,
+                        code: richText.annotations?.code ?? false,
+                        color: richText.annotations?.color ?? "default"
+                    ),
+                    type: richText.type,
+                    text: NotionTextContent(
+                        content: richText.text?.content ?? "",
+                        link: richText.text?.link.map { NotionLink(url: $0.url) }
+                    )
+                )
+            },
+            properties: convertToProperties(properties),
+            url: url
         )
     }
     
@@ -101,35 +159,76 @@ extension NotionKitVapor.SyncStatus {
     public func toNotionKit() -> SyncStatus {
         switch self {
         case .success: return .success
-        case .failure: return .failure
-        case .inProgress: return .inProgress
+        case .failed: return .failed
+        case .partial: return .partial
         }
     }
 }
 
 // MARK: - Supporting Types
 public struct RichTextItem: Codable, Sendable {
-    public let text: String
+    public let type: String
+    public let text: TextContent?
+    public let annotations: Annotations?
+    public let plain_text: String
+    public let href: String?
     
     public init(text: String) {
-        self.text = text
+        self.type = "text"
+        self.text = TextContent(content: text, link: nil)
+        self.annotations = Annotations(bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default")
+        self.plain_text = text
+        self.href = nil
     }
     
-    public func toNotionKit() -> NotionRichText {
-        return NotionRichText(
-            plainText: text,
-            href: nil,
-            annotations: NotionAnnotations(
-                bold: false,
-                italic: false,
-                strikethrough: false,
-                underline: false,
-                code: false,
-                color: "default"
-            ),
-            type: "text",
-            text: NotionTextContent(content: text, link: nil)
-        )
+    public init(type: String, text: TextContent?, annotations: Annotations?, plain_text: String, href: String?) {
+        self.type = type
+        self.text = text
+        self.annotations = annotations
+        self.plain_text = plain_text
+        self.href = href
+    }
+}
+
+public struct TextContent: Codable, Sendable {
+    public let content: String
+    public let link: Link?
+    
+    public init(content: String, link: Link? = nil) {
+        self.content = content
+        self.link = link
+    }
+}
+
+public struct Link: Codable, Sendable {
+    public let url: String
+    
+    public init(url: String) {
+        self.url = url
+    }
+}
+
+public struct Annotations: Codable, Sendable {
+    public let bold: Bool
+    public let italic: Bool
+    public let strikethrough: Bool
+    public let underline: Bool
+    public let code: Bool
+    public let color: String
+    
+    public init(bold: Bool, italic: Bool, strikethrough: Bool, underline: Bool, code: Bool, color: String) {
+        self.bold = bold
+        self.italic = italic
+        self.strikethrough = strikethrough
+        self.underline = underline
+        self.code = code
+        self.color = color
+    }
+}
+
+extension NotionRichText {
+    public func toVapor() -> RichTextItem {
+        return RichTextItem(text: plainText)
     }
 }
 
@@ -148,28 +247,99 @@ public struct PropertyValue: Codable, Sendable {
 }
 
 // MARK: - NotionKit to NotionKitVapor Conversion
-extension DatabaseInfo {
-    public init(from database: NotionDatabase) {
-        self.id = database.id
-        self.name = database.name
-        self.url = database.url ?? ""
-        self.title = database.title?.map { RichTextItem(text: $0.plainText) } ?? []
-        self.properties = [:] // TODO: Implement property conversion
-        self.items = [] // TODO: Implement items conversion
+extension NotionUserData {
+    public func toVapor() -> NotionKitVapor.NotionUserData {
+        // Convert user info
+        let vaporToken = NotionKitVapor.TokenInfo(
+            accessToken: user.token.accessToken,
+            botId: user.token.botId,
+            workspaceId: user.token.workspaceId,
+            workspaceName: user.token.workspaceName,
+            workspaceIcon: user.token.workspaceIcon,
+            expiresAt: user.token.expiresAt
+        )
+        
+        let vaporWorkspace = NotionKitVapor.WorkspaceInfo(
+            id: user.workspace.id,
+            name: user.workspace.name,
+            icon: user.workspace.icon
+        )
+        
+        let vaporUser = NotionKitVapor.UserInfo(
+            id: user.id,
+            token: vaporToken,
+            workspace: vaporWorkspace
+        )
+        
+        // Convert databases
+        let vaporDatabases = databases.map { db in
+            NotionKitVapor.DatabaseInfo(
+                id: db.id,
+                name: db.name,
+                url: db.url ?? "",
+                title: (db.title ?? []).map { richText in
+                    RichTextItem(
+                        type: richText.type,
+                        text: TextContent(
+                            content: richText.text?.content ?? "",
+                            link: richText.text?.link.map { Link(url: $0.url) }
+                        ),
+                        annotations: Annotations(
+                            bold: richText.annotations?.bold ?? false,
+                            italic: richText.annotations?.italic ?? false,
+                            strikethrough: richText.annotations?.strikethrough ?? false,
+                            underline: richText.annotations?.underline ?? false,
+                            code: richText.annotations?.code ?? false,
+                            color: richText.annotations?.color ?? "default"
+                        ),
+                        plain_text: richText.plain_text,
+                        href: richText.href
+                    )
+                },
+                properties: [:], // TODO: Implement property conversion
+                items: [] // TODO: Implement items conversion
+            )
+        }
+        
+        // Convert pages
+        let vaporPages = pages.map { page in
+            NotionKitVapor.PageInfo(
+                id: page.id,
+                url: page.url,
+                title: page.title,
+                icon: nil,
+                cover: nil,
+                properties: [:], // TODO: Implement property conversion
+                blocks: [], // TODO: Implement blocks conversion
+                lastEditedTime: page.lastEditedTime,
+                createdTime: page.createdTime
+            )
+        }
+        
+        // Convert metadata
+        let vaporMetadata = NotionKitVapor.Metadata(
+            syncedAt: metadata.syncedAt,
+            version: metadata.version,
+            lastSyncStatus: metadata.lastSyncStatus.toVapor()
+        )
+        
+        // Create final NotionUserData
+        return NotionKitVapor.NotionUserData(
+            user: vaporUser,
+            databases: vaporDatabases,
+            pages: vaporPages,
+            metadata: vaporMetadata
+        )
     }
 }
 
-extension PageInfo {
-    public init(from page: NotionPage) {
-        self.id = page.id
-        self.url = page.url
-        self.title = page.properties["title"] ?? ""
-        self.icon = nil // TODO: Implement icon conversion
-        self.cover = nil // TODO: Implement cover conversion
-        self.properties = [:] // TODO: Implement property conversion
-        self.blocks = [] // TODO: Implement blocks conversion
-        self.lastEditedTime = Date()
-        self.createdTime = Date()
+extension SyncStatus {
+    public func toVapor() -> NotionKitVapor.SyncStatus {
+        switch self {
+        case .success: return .success
+        case .failed: return .failed
+        case .partial: return .partial
+        }
     }
 }
 
