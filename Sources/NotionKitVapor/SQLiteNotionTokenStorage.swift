@@ -77,7 +77,7 @@ public final class SQLiteNotionTokenStorage: NotionTokenStorage, @unchecked Send
 }
 
 /// Fluent model for storing Notion tokens
-final class NotionTokenModel: Model {
+final class NotionTokenModel: Model, @unchecked Sendable {
     static let schema = "notion_tokens"
     
     @ID(custom: .id)

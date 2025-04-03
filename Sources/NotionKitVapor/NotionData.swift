@@ -224,6 +224,6 @@ public struct Metadata: Content {
 /// The status of a sync operation
 public enum SyncStatus: String, Codable, Sendable {
     case success
-    case failure
-    case inProgress
+    case failure = "failed"
+    case inProgress = "partial"
 } 
