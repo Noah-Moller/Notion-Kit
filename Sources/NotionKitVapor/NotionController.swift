@@ -60,8 +60,17 @@ public struct NotionController {
         let state = UUID().uuidString
         req.session.data["notion_state"] = state
         
+        // Debug logging
+        req.logger.debug("=== NotionKit Debug: Authorize ===")
+        req.logger.debug("Generated state: \(state)")
+        
         // Get OAuth URL
         let oauthURL = req.application.notion.getOAuthURL(state: state)
+        req.logger.debug("OAuth URL: \(oauthURL.absoluteString)")
+        
+        // Debug: Check client configuration
+        req.logger.debug("Client configuration:")
+        req.logger.debug("Redirect URI: \(req.application.notion.getRedirectUri())")
         
         // Redirect to OAuth URL
         return req.redirect(to: oauthURL.absoluteString)

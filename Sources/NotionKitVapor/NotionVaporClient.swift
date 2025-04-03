@@ -245,6 +245,8 @@ public class NotionVaporClient: @unchecked Sendable {
         return try await notionClient.getChildBlocks(token: token.accessToken, blockId: blockId)
     }
     
+    // MARK: - Diagnostic Methods
+    
     /// Gets the client ID (for diagnostics)
     /// - Returns: The client ID
     public func getClientId() -> String {
