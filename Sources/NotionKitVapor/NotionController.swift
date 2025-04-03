@@ -133,7 +133,7 @@ public struct NotionController {
             req.logger.info("Exchanging code for token for user: \(userId)")
             req.logger.debug("Redirect URI: \(tokenRequest.redirectUri)")
             
-            // Exchange code for token directly without creating a mock request
+            // Exchange code for token
             let token = try await req.application.notion.exchangeCodeForToken(
                 userId: userId, 
                 code: tokenRequest.code,
@@ -143,13 +143,19 @@ public struct NotionController {
             req.logger.info("Successfully exchanged code for token")
             req.logger.debug("Workspace: \(token.workspaceName)")
             
+            // Immediately populate Notion data after token exchange
+            try await populateNotionData(req: req, userId: userId, token: token)
+            req.logger.info("Successfully populated Notion data for user: \(userId)")
+            
             // Create response
-            struct TokenResponse: Content, Sendable {
+            struct TokenResponse: Content {
                 let accessToken: String
                 let botId: String
                 let workspaceId: String
                 let workspaceName: String
                 let workspaceIcon: String?
+                let success: Bool
+                let message: String
                 
                 enum CodingKeys: String, CodingKey {
                     case accessToken = "access_token"
@@ -157,28 +163,25 @@ public struct NotionController {
                     case workspaceId = "workspace_id"
                     case workspaceName = "workspace_name"
                     case workspaceIcon = "workspace_icon"
+                    case success
+                    case message
                 }
             }
             
-            let tokenResponse = TokenResponse(
+            let response = TokenResponse(
                 accessToken: token.accessToken,
                 botId: token.botId,
                 workspaceId: token.workspaceId,
                 workspaceName: token.workspaceName,
-                workspaceIcon: token.workspaceIcon
+                workspaceIcon: token.workspaceIcon,
+                success: true,
+                message: "Successfully authenticated and loaded Notion data"
             )
             
-            return try await tokenResponse.encodeResponse(for: req)
-        } catch let error as DecodingError {
-            req.logger.error("Failed to decode request: \(error)")
-            let details = extractDecodingErrorDetails(error)
-            throw Abort(.badRequest, reason: "Invalid request format: \(details)")
-        } catch let error as Abort {
-            req.logger.error("Abort error: \(error.reason)")
-            throw error
+            return try await response.encodeResponse(for: req)
         } catch {
-            req.logger.error("Failed to exchange code for token: \(error)")
-            throw Abort(.internalServerError, reason: "Failed to exchange code for token: \(error.localizedDescription)")
+            req.logger.error("Error exchanging token: \(error)")
+            throw error
         }
     }
     

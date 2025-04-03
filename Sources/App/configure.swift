@@ -44,24 +44,9 @@ public func configure(_ app: Application) throws {
         redirectUri: Environment.get("NOTION_REDIRECT_URI")!
     )
     
-    // Register routes with UserIDMiddleware to handle client requests
+    // Register the package's routes with UserIDMiddleware
     let userIDMiddleware = UserIDMiddleware()
-    // Create a route group with both sessions middleware and user ID middleware
-    let routesWithSessionAndAuth = app.grouped([app.sessions.middleware, userIDMiddleware])
-    NotionController.registerRoutes(on: routesWithSessionAndAuth)
-    
-    // Example of how to access NotionData in your routes
-    routesWithSessionAndAuth.get("notion", "data") { req async throws -> NotionKitVapor.NotionUserData in
-        guard let userId = req.auth.get(SimpleUser.self)?.id else {
-            throw Abort(.unauthorized)
-        }
-        
-        guard let notionData = req.application.notionData.getData(for: userId) else {
-            throw Abort(.notFound, reason: "Notion data not found. Please authenticate first.")
-        }
-        
-        return notionData
-    }
+    NotionController.registerRoutes(on: app, authMiddleware: userIDMiddleware)
     
     app.routes.defaultMaxBodySize = "10mb"
     // Create a shared HTTPClient with a shared event loop group
