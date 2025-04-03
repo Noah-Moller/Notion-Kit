@@ -41,19 +41,19 @@ public class NotionClientManager: ObservableObject {
     // MARK: - Private Properties
     
     /// The base Notion client
-    private let notionClient: NotionClientProtocol
+    let notionClient: NotionClientProtocol
     
     /// The API server URL for token exchange and API calls
     let apiServerURL: URL
     
     /// The Notion OAuth client ID
-    private let clientId: String
+    let clientId: String
     
     /// The token storage
-    private let tokenStorage: UserDefaultsNotionTokenStorage
+    let tokenStorage: UserDefaultsNotionTokenStorage
     
     /// The user ID to use in API requests
-    private let userId: String
+    let userId: String
     
     // MARK: - Initialization
     
